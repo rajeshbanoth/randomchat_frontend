@@ -21,14 +21,25 @@ export const useSocket = (userProfile, onEvents) => {
   const initializeSocket = useCallback(() => {
     if (socketRef.current?.connected) return socketRef.current;
 
-    const newSocket = io(SOCKET_SERVER_URL, {
-      transports: ['websocket', 'polling'],
-      reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
-      timeout: 30000,
-      autoConnect: true
-    });
+    // const newSocket = io(SOCKET_SERVER_URL, {
+    //   transports: ['websocket', 'polling'],
+    //   reconnection: true,
+    //   reconnectionAttempts: 5,
+    //   reconnectionDelay: 1000,
+    //   timeout: 30000,
+    //   autoConnect: true
+    // });
+
+    const newSocket = io({
+  path: "/api/socket/socket.io",
+  transports: ["websocket"],
+  reconnection: true,
+  reconnectionAttempts: 5,
+  reconnectionDelay: 1000,
+  timeout: 30000,
+  autoConnect: true,
+});
+
 
     socketRef.current = newSocket;
     return newSocket;
