@@ -1,5 +1,72 @@
 /* OmegleMobile.css - Enhanced Video Chat Styles */
+/* HTTP Error Fallback Styles */
+.browser-info-box {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+  padding: 15px;
+  margin: 15px 0;
+}
 
+.browser-info-box h4 {
+  margin-top: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.browser-info-box p {
+  margin: 5px 0;
+  font-size: 14px;
+}
+
+.solution-card {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 10px;
+  padding: 15px;
+  margin: 10px 0;
+  color: white;
+}
+
+.solution-card h5 {
+  margin-top: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.solution-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  padding: 10px 15px;
+  border-radius: 5px;
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+
+.solution-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.tech-tips {
+  margin-top: 20px;
+  padding: 15px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+
+.tech-tips ul {
+  padding-left: 20px;
+  font-size: 14px;
+}
+
+.tech-tips li {
+  margin: 5px 0;
+}
 
 /* Main Container */
 .omegle-video-container {
