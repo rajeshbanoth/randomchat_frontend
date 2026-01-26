@@ -81,7 +81,8 @@ const VideoChatScreen = () => {
   // ==================== INITIALIZATION ====================
   const fetchIceServers = async () => {
     try {
-      const response = await fetch('http://localhost:5000/webrtc/config');
+      const url = import.meta.env.VITE_BACKEND_URL+"/webrtc/config" || 'http://localhost:5000/webrtc/config';
+      const response = await fetch(url);
       const config = await response.json();
       setIceServers(config.iceServers || []);
       console.log('🧊 ICE servers loaded:', config.iceServers?.length || 0);
