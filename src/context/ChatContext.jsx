@@ -1797,6 +1797,7 @@ export const ChatProvider = ({ children }) => {
 
 
     // Update the matched event handler in setupSocketEventHandlers
+// Fix the matched event handler (remove early return)
 socketInstance.on('matched', (data) => {
   console.log('Matched with partner:', data);
   
@@ -1808,40 +1809,118 @@ socketInstance.on('matched', (data) => {
   safeSetState(setSearching, false);
   safeSetState(setPartnerTyping, false);
   
-  const partnerMode = data.profile?.chatMode || 'text';
+  const partnerMode = data.matchMode || data.profile?.chatMode || 'text';
   const currentMode = currentChatModeRef.current;
+  
+  console.log('Mode check:', { partnerMode, currentMode });
+  
+  // Only warn about mode mismatch, don't prevent setting partner
   if (partnerMode !== currentMode) {
     console.warn('Mode mismatch:', { currentMode, partnerMode });
-    addNotification('Partner mode mismatch. Please try again.', 'warning');
-    
-    setTimeout(() => {
-      handleAutoSearch();
-    }, 1000);
-    return;
+    addNotification('Partner mode mismatch, but continuing...', 'warning');
   }
   
-  // Set partner state
+  // CRITICAL: Set partner state
   safeSetState(setPartner, data);
-  safeSetState(setMessages, []);
   
-  // Store partner in ref for immediate access
+  // Also update partnerRef immediately
   partnerRef.current = data;
   
-  // IMPORTANT: If we're in video mode, don't wait for VideoChatScreen to auto-start
-  // Send a signal to VideoChatScreen to start the call immediately
-  if (currentMode === 'video') {
-    console.log('Video match detected, notifying VideoChatScreen to start call');
-    
-    // Emit a custom event that VideoChatScreen can listen to
+  // Clear messages when matched
+  safeSetState(setMessages, []);
+  
+  // Navigate to appropriate screen based on mode
+  const targetScreen = partnerMode === 'video' ? 'video-chat' : 'text-chat';
+  safeSetState(setCurrentScreen, targetScreen);
+  
+  addNotification(`Matched with ${data.profile?.username || 'stranger'}`, 'success');
+  
+  // Dispatch event for VideoChatScreen
+  if (partnerMode === 'video') {
+    console.log('Dispatching video-match event for VideoChatScreen');
     setTimeout(() => {
-      // This will be used by VideoChatScreen to immediately start call
       window.dispatchEvent(new CustomEvent('video-match', { 
-        detail: { partner: data } 
+        detail: { 
+          partner: data,
+          timestamp: Date.now()
+        } 
       }));
     }, 100);
   }
+});
+
+// Handle video-match-ready event from server
+socketInstance.on('video-match-ready', (data) => {
+  console.log('Video match ready event received:', data);
   
-  addNotification(`Matched with ${data.profile?.username || 'stranger'}`, 'success');
+  // Update partner with video call info
+  safeSetState(setPartner, prevPartner => {
+    if (prevPartner && (prevPartner.partnerId === data.partnerId || prevPartner.id === data.partnerId)) {
+      return {
+        ...prevPartner,
+        videoCallId: data.callId,
+        roomId: data.roomId,
+        partnerProfile: data.partnerProfile
+      };
+    }
+    return prevPartner;
+  });
+  
+  // Also update partnerRef
+  if (partnerRef.current && (partnerRef.current.partnerId === data.partnerId || partnerRef.current.id === data.partnerId)) {
+    partnerRef.current = {
+      ...partnerRef.current,
+      videoCallId: data.callId,
+      roomId: data.roomId,
+      partnerProfile: data.partnerProfile
+    };
+  }
+  
+  addNotification('Video call is ready to start!', 'success');
+  
+  // Notify VideoChatScreen
+  setTimeout(() => {
+    window.dispatchEvent(new CustomEvent('video-call-ready', { 
+      detail: data 
+    }));
+  }, 100);
+});
+
+// WebRTC signaling handlers
+socketInstance.on('webrtc-offer', (data) => {
+  console.log('WebRTC offer received:', data);
+  // This will be handled by VideoChatScreen
+  window.dispatchEvent(new CustomEvent('webrtc-offer', { detail: data }));
+});
+
+socketInstance.on('webrtc-answer', (data) => {
+  console.log('WebRTC answer received:', data);
+  window.dispatchEvent(new CustomEvent('webrtc-answer', { detail: data }));
+});
+
+socketInstance.on('webrtc-ice-candidate', (data) => {
+  console.log('WebRTC ICE candidate received:', data);
+  window.dispatchEvent(new CustomEvent('webrtc-ice-candidate', { detail: data }));
+});
+
+socketInstance.on('webrtc-end', (data) => {
+  console.log('WebRTC call ended:', data);
+  window.dispatchEvent(new CustomEvent('webrtc-end', { detail: data }));
+  
+  // Reset video call state
+  safeSetState(setPartner, prev => {
+    if (prev) {
+      const { videoCallId, ...rest } = prev;
+      return rest;
+    }
+    return prev;
+  });
+});
+
+socketInstance.on('webrtc-error', (data) => {
+  console.error('WebRTC error:', data);
+  window.dispatchEvent(new CustomEvent('webrtc-error', { detail: data }));
+  addNotification(`WebRTC error: ${data.error || 'Unknown'}`, 'error');
 });
     socketInstance.on('partnerDisconnected', (data) => {
       console.log('Partner disconnected:', data);
@@ -1969,6 +2048,27 @@ socketInstance.on('matched', (data) => {
     };
   }, [searching, safeSetState]);
 
+
+  // In your ChatProvider component, add these functions:
+const debugGetState = useCallback(() => {
+  return {
+    partnerRef: partnerRef.current,
+    partnerState: partner,
+    socketConnected: socket?.connected,
+    socketId: socket?.id,
+    currentChatMode,
+    searching,
+    messagesCount: messages.length
+  };
+}, [partner, socket, currentChatMode, searching, messages]);
+
+const debugForcePartnerUpdate = useCallback((partnerData) => {
+  console.log('Force updating partner:', partnerData);
+  safeSetState(setPartner, partnerData);
+  partnerRef.current = partnerData;
+  return true;
+}, [safeSetState]);
+
   // ==================== CONTEXT VALUE ====================
 
   const contextValue = {
@@ -1988,6 +2088,10 @@ socketInstance.on('matched', (data) => {
     searchTime,
     partnerTyping,
     connectionError,
+
+
+    debugGetState,      // Add this
+  debugForcePartnerUpdate , // Add this,
     
     // Actions
     setCurrentScreen: (screen) => safeSetState(setCurrentScreen, screen),
@@ -2006,6 +2110,33 @@ socketInstance.on('matched', (data) => {
     handleTypingStart,
     handleTypingStop,
     resetSearchState,
+
+
+     // WebRTC functions
+  sendWebRTCOffer: (data) => {
+    if (socket?.connected) {
+      socket.emit('webrtc-offer', data);
+      console.log('WebRTC offer sent:', data);
+    }
+  },
+  sendWebRTCAnswer: (data) => {
+    if (socket?.connected) {
+      socket.emit('webrtc-answer', data);
+      console.log('WebRTC answer sent:', data);
+    }
+  },
+  sendWebRTCIceCandidate: (data) => {
+    if (socket?.connected) {
+      socket.emit('webrtc-ice-candidate', data);
+      console.log('WebRTC ICE candidate sent:', data);
+    }
+  },
+  sendWebRTCEnd: (data) => {
+    if (socket?.connected) {
+      socket.emit('webrtc-end', data);
+      console.log('WebRTC end sent:', data);
+    }
+  }
   };
 
   return (
