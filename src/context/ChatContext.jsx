@@ -1163,6 +1163,8 @@ export const ChatProvider = ({ children }) => {
    */
   const startSearch = useCallback((mode) => {
     try {
+
+      console.log("mode selected",  mode);
       if (!socketRef.current || !socketRef.current.connected) {
         throw new SocketError('Not connected to server', { connected, socketExists: !!socketRef.current });
       }
