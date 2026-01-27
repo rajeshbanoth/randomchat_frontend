@@ -122,6 +122,8 @@ const processQueuedIceCandidates = useCallback(async () => {
   }
 }, []);
 
+
+
 // Add this effect to process queued candidates when remote description is set
 useEffect(() => {
   if (peerConnectionRef.current?.remoteDescription && queuedIceCandidatesRef.current.length > 0) {
@@ -138,6 +140,94 @@ useEffect(() => {
     sunset: 'from-orange-900/30 to-rose-900/30'
   };
 
+
+
+  
+  const startStatsCollection = () => {
+    if (statsIntervalRef.current) {
+      clearInterval(statsIntervalRef.current);
+    }
+    
+    statsIntervalRef.current = setInterval(async () => {
+      if (peerConnectionRef.current && connectionStatus === 'connected') {
+        try {
+          const stats = await peerConnectionRef.current.getStats();
+          let audioStats = { inbound: {}, outbound: {} };
+          let videoStats = { inbound: {}, outbound: {} };
+          
+          stats.forEach(report => {
+            if (report.type === 'inbound-rtp') {
+              if (report.kind === 'audio') {
+                audioStats.inbound = {
+                  packetsReceived: report.packetsReceived,
+                  packetsLost: report.packetsLost,
+                  jitter: report.jitter,
+                  bytesReceived: report.bytesReceived
+                };
+              } else if (report.kind === 'video') {
+                videoStats.inbound = {
+                  framesReceived: report.framesReceived,
+                  framesDecoded: report.framesDecoded,
+                  framesDropped: report.framesDropped,
+                  bytesReceived: report.bytesReceived,
+                  frameWidth: report.frameWidth,
+                  frameHeight: report.frameHeight,
+                  framesPerSecond: report.framesPerSecond
+                };
+              }
+            } else if (report.type === 'outbound-rtp') {
+              if (report.kind === 'audio') {
+                audioStats.outbound = {
+                  packetsSent: report.packetsSent,
+                  bytesSent: report.bytesSent
+                };
+              } else if (report.kind === 'video') {
+                videoStats.outbound = {
+                  framesSent: report.framesSent,
+                  framesEncoded: report.framesEncoded,
+                  bytesSent: report.bytesSent,
+                  frameWidth: report.frameWidth,
+                  frameHeight: report.frameHeight,
+                  framesPerSecond: report.framesPerSecond
+                };
+              }
+            } else if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+              setCallStats(prev => ({
+                ...prev,
+                rtt: report.currentRoundTripTime * 1000,
+                availableOutgoingBitrate: report.availableOutgoingBitrate
+              }));
+            }
+          });
+          
+          setCallStats(prev => ({
+            ...prev,
+            audio: audioStats,
+            video: videoStats,
+            timestamp: Date.now()
+          }));
+        } catch (error) {
+          console.error('Error getting stats:', error);
+        }
+      }
+    }, 2000);
+  };
+    const attemptReconnect = () => {
+    if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
+      addNotification('Failed to reconnect after multiple attempts', 'error');
+      return;
+    }
+    
+    reconnectAttemptsRef.current += 1;
+    addNotification(`Reconnecting... (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})`, 'warning');
+    
+    setTimeout(() => {
+      if (callInfo.callId && callInfo.roomId) {
+        console.log('🔄 Attempting reconnect');
+        initializeWebRTCConnection();
+      }
+    }, 2000);
+  };
   // ==================== INITIALIZATION ====================
   
   const fetchIceServers = async () => {
@@ -443,6 +533,40 @@ const createPlaceholderStream = () => {
 
 
 
+useEffect(() => {
+  // Periodically check for tracks without streams
+  const checkInterval = setInterval(() => {
+    if (peerConnectionRef.current && !remoteStreamRef.current?.getTracks().length) {
+      console.log('🔍 Checking for orphaned tracks...');
+      
+      const receivers = peerConnectionRef.current.getReceivers();
+      receivers.forEach(receiver => {
+        if (receiver.track && receiver.track.readyState === 'live') {
+          console.log(`🎯 Found orphaned ${receiver.track.kind} track, adding to stream`);
+          
+          if (!remoteStreamRef.current) {
+            remoteStreamRef.current = new MediaStream();
+          }
+          
+          if (!remoteStreamRef.current.getTracks().find(t => t.id === receiver.track.id)) {
+            remoteStreamRef.current.addTrack(receiver.track);
+            
+            if (remoteVideoRef.current) {
+              remoteVideoRef.current.srcObject = remoteStreamRef.current;
+              console.log('✅ Updated remote video with orphaned track');
+            }
+            
+            setRemoteStream(remoteStreamRef.current);
+          }
+        }
+      });
+    }
+  }, 2000);
+  
+  return () => clearInterval(checkInterval);
+}, []);
+
+
   // ==================== WEBRTC CORE FUNCTIONS ====================
 
 const createPeerConnection = useCallback((servers) => {
@@ -456,14 +580,27 @@ const createPeerConnection = useCallback((servers) => {
     rtcpMuxPolicy: 'require'
   };
   
+  // Close existing peer connection if any
+  if (peerConnectionRef.current) {
+    console.log('🛑 Closing existing peer connection');
+    peerConnectionRef.current.close();
+  }
+  
   const pc = new RTCPeerConnection(configuration);
   peerConnectionRef.current = pc;
   
-  // CRITICAL: Add transceivers before tracks
-  pc.addTransceiver('video', { direction: 'sendrecv' });
-  pc.addTransceiver('audio', { direction: 'sendrecv' });
+  // CRITICAL: Add transceivers BEFORE adding tracks
+  console.log('🔄 Adding transceivers for audio/video');
+  try {
+    pc.addTransceiver('video', { direction: 'sendrecv' });
+    pc.addTransceiver('audio', { direction: 'sendrecv' });
+    console.log('✅ Transceivers added');
+  } catch (error) {
+    console.warn('⚠️ Could not add transceivers:', error);
+  }
   
   // Set up event handlers
+  
   pc.onicecandidate = (event) => {
     if (event.candidate && socket?.connected && callInfo.partnerId) {
       console.log('🧊 Sending ICE candidate to partner:', callInfo.partnerId);
@@ -473,6 +610,8 @@ const createPeerConnection = useCallback((servers) => {
         callId: callInfo.callId,
         roomId: callInfo.roomId
       });
+    } else if (!event.candidate) {
+      console.log('✅ All ICE candidates gathered');
     }
   };
   
@@ -486,7 +625,14 @@ const createPeerConnection = useCallback((servers) => {
     if (pc.iceConnectionState === 'failed') {
       console.warn('⚠️ ICE connection failed, restarting ICE...');
       pc.restartIce();
+    } else if (pc.iceConnectionState === 'connected') {
+      console.log('✅ ICE connection established!');
+      addNotification('Network connection established', 'success');
     }
+  };
+  
+  pc.onicegatheringstatechange = () => {
+    console.log('📡 ICE gathering state:', pc.iceGatheringState);
   };
   
   pc.onconnectionstatechange = () => {
@@ -505,86 +651,234 @@ const createPeerConnection = useCallback((servers) => {
     }
   };
   
-  // Proper track event handler
+  // CRITICAL FIX: Proper track event handler
   pc.ontrack = (event) => {
     console.log('🎬 Received remote track:', {
       kind: event.track.kind,
-      id: event.track.id,
+      id: event.track.id?.substring(0, 8) || 'unknown',
       readyState: event.track.readyState,
-      streams: event.streams?.length || 0
+      enabled: event.track.enabled,
+      muted: event.track.muted,
+      streams: event.streams?.length || 0,
+      trackStreams: event.streams?.map(s => s.id) || []
     });
     
-    if (event.streams && event.streams.length > 0) {
-      const remoteStream = event.streams[0];
-      console.log('📹 Remote stream received:', {
-        streamId: remoteStream.id,
-        videoTracks: remoteStream.getVideoTracks().length,
-        audioTracks: remoteStream.getAudioTracks().length
-      });
-      
-      // Create or update remote stream
-      if (!remoteStreamRef.current) {
-        remoteStreamRef.current = new MediaStream();
-      }
-      
-      // Add all tracks from the stream
-      event.streams[0].getTracks().forEach(track => {
-        if (!remoteStreamRef.current.getTracks().find(t => t.id === track.id)) {
-          remoteStreamRef.current.addTrack(track);
-          console.log(`✅ Added ${track.kind} track to remote stream`);
-        }
-      });
-      
-      // Update remote video element
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = remoteStreamRef.current;
-        console.log('✅ Remote video element updated with stream');
-        
-        // Try to play
-        remoteVideoRef.current.play().catch(err => {
-          console.warn('⚠️ Auto-play failed:', err);
-        });
-      }
-      
-      setRemoteStream(remoteStreamRef.current);
-      monitorRemoteStream(remoteStreamRef.current);
-      
-      addNotification('Partner video received', 'success');
+    // Create or get remote stream
+    if (!remoteStreamRef.current) {
+      console.log('📹 Creating new remote stream');
+      remoteStreamRef.current = new MediaStream();
     }
+    
+    const remoteStream = remoteStreamRef.current;
+    
+    // Check if we already have this track
+    const existingTrack = remoteStream.getTracks().find(t => t.id === event.track.id);
+    
+    if (!existingTrack) {
+      console.log(`✅ Adding ${event.track.kind} track to remote stream:`, {
+        trackId: event.track.id?.substring(0, 8),
+        enabled: event.track.enabled,
+        muted: event.track.muted
+      });
+      
+      remoteStream.addTrack(event.track);
+      
+      // Update the remote video element
+      if (remoteVideoRef.current) {
+        // Only update if the srcObject is different or null
+        if (remoteVideoRef.current.srcObject !== remoteStream) {
+          console.log('🎥 Updating remote video element with stream');
+          remoteVideoRef.current.srcObject = remoteStream;
+          
+          // Set video attributes for better playback
+          remoteVideoRef.current.playsInline = true;
+          remoteVideoRef.current.muted = false;
+          
+          // Force playback
+          const playPromise = remoteVideoRef.current.play();
+          if (playPromise !== undefined) {
+            playPromise.catch(err => {
+              console.warn('⚠️ Remote video auto-play failed:', err);
+              
+              // Try again on user interaction
+              const playOnInteraction = () => {
+                remoteVideoRef.current?.play().then(() => {
+                  console.log('✅ Remote video playback started after interaction');
+                  document.removeEventListener('click', playOnInteraction);
+                }).catch(e => {
+                  console.error('❌ Still cannot play remote video:', e);
+                });
+              };
+              
+              document.addEventListener('click', playOnInteraction);
+            }).then(() => {
+              console.log('✅ Remote video playback started successfully');
+            });
+          }
+        } else {
+          console.log('ℹ️ Remote video already has this stream');
+        }
+      }
+      
+      // Update React state
+      setRemoteStream(remoteStream);
+      monitorRemoteStream(remoteStream);
+      
+      // Log current state
+      console.log('📊 Remote stream state:', {
+        videoTracks: remoteStream.getVideoTracks().length,
+        audioTracks: remoteStream.getAudioTracks().length,
+        allTracks: remoteStream.getTracks().map(t => ({
+          kind: t.kind,
+          id: t.id?.substring(0, 8),
+          enabled: t.enabled,
+          muted: t.muted
+        }))
+      });
+      
+      addNotification(`Partner ${event.track.kind} received`, 'success');
+    } else {
+      console.log(`ℹ️ ${event.track.kind} track already in stream`);
+    }
+    
+    // Handle track events
+    event.track.onended = () => {
+      console.log(`🛑 Remote ${event.track.kind} track ended`);
+      
+      if (remoteStreamRef.current) {
+        remoteStreamRef.current.removeTrack(event.track);
+        console.log(`🛑 Removed ${event.track.kind} track from stream`);
+        
+        // Update UI
+        if (event.track.kind === 'video') {
+          setIsRemoteVideoMuted(true);
+        } else {
+          setIsRemoteAudioMuted(true);
+        }
+      }
+    };
+    
+    event.track.onmute = () => {
+      console.log(`🔇 Remote ${event.track.kind} track muted`);
+      if (event.track.kind === 'video') {
+        setIsRemoteVideoMuted(true);
+      } else {
+        setIsRemoteAudioMuted(true);
+      }
+    };
+    
+    event.track.onunmute = () => {
+      console.log(`🔊 Remote ${event.track.kind} track unmuted`);
+      if (event.track.kind === 'video') {
+        setIsRemoteVideoMuted(false);
+      } else {
+        setIsRemoteAudioMuted(false);
+      }
+    };
+    
+    // Additional debug for the track
+    console.log(`🎯 ${event.track.kind} track debug:`, {
+      label: event.track.label,
+      constraints: event.track.getConstraints?.(),
+      settings: event.track.getSettings?.(),
+      capabilities: event.track.getCapabilities?.(),
+      contentHint: event.track.contentHint
+    });
+  };
+  
+  pc.ondatachannel = (event) => {
+    console.log('📨 Data channel received:', event.channel.label);
   };
   
   pc.onnegotiationneeded = async () => {
     console.log('🔁 Negotiation needed, current state:', pc.signalingState);
+    
+    // Only create offer if we're the caller and in stable state
     if (callInfo.isCaller && pc.signalingState === 'stable') {
       console.log('📤 Creating offer as caller...');
-      try {
-        const offer = await pc.createOffer({
-          offerToReceiveAudio: true,
-          offerToReceiveVideo: true
-        });
-        await pc.setLocalDescription(offer);
-        
-        sendWebRTCOffer({
-          to: callInfo.partnerId,
-          sdp: offer,
-          callId: callInfo.callId,
-          roomId: callInfo.roomId,
-          metadata: {
-            username: userProfile?.username || 'Anonymous',
-            videoEnabled: isVideoEnabled,
-            audioEnabled: isAudioEnabled
+      
+      // Small delay to ensure everything is ready
+      setTimeout(async () => {
+        try {
+          const offerOptions = {
+            offerToReceiveAudio: true,
+            offerToReceiveVideo: true,
+            voiceActivityDetection: true,
+            iceRestart: false
+          };
+          
+          console.log('📝 Creating offer with options:', offerOptions);
+          const offer = await pc.createOffer(offerOptions);
+          console.log('✅ Offer created:', offer.type);
+          
+          await pc.setLocalDescription(offer);
+          console.log('✅ Local description set');
+          
+          if (socket?.connected && callInfo.partnerId) {
+            sendWebRTCOffer({
+              to: callInfo.partnerId,
+              sdp: offer,
+              callId: callInfo.callId,
+              roomId: callInfo.roomId,
+              metadata: {
+                username: userProfile?.username || 'Anonymous',
+                videoEnabled: isVideoEnabled,
+                audioEnabled: isAudioEnabled
+              }
+            });
+            
+            console.log('📤 Offer sent to partner:', callInfo.partnerId);
+          } else {
+            console.warn('⚠️ Cannot send offer: socket not connected or no partner');
           }
-        });
-        
-        console.log('📤 Offer sent to partner');
-      } catch (error) {
-        console.error('❌ Error creating offer:', error);
-      }
+        } catch (error) {
+          console.error('❌ Error creating offer:', error);
+        }
+      }, 1000); // 1 second delay
+    } else {
+      console.log('ℹ️ Not creating offer:', {
+        isCaller: callInfo.isCaller,
+        signalingState: pc.signalingState,
+        role: callInfo.isCaller ? 'caller' : 'callee'
+      });
     }
   };
   
+  // Add debugging for transceivers
+  const logTransceivers = () => {
+    const transceivers = pc.getTransceivers();
+    console.log('🔍 Current transceivers:', transceivers.length);
+    transceivers.forEach((tc, idx) => {
+      console.log(`  Transceiver ${idx}:`, {
+        mid: tc.mid,
+        direction: tc.direction,
+        currentDirection: tc.currentDirection,
+        receiverTrack: tc.receiver.track?.kind || 'none',
+        senderTrack: tc.sender.track?.kind || 'none',
+        receiverEnabled: tc.receiver.track?.enabled,
+        senderEnabled: tc.sender.track?.enabled
+      });
+    });
+  };
+  
+  // Log initial transceivers
+  setTimeout(logTransceivers, 100);
+  
+  console.log('✅ Peer connection created successfully');
   return pc;
-}, [socket, callInfo, sendWebRTCIceCandidate, sendWebRTCOffer, userProfile, isVideoEnabled, isAudioEnabled, addNotification]);
+}, [
+  socket, 
+  callInfo, 
+  sendWebRTCIceCandidate, 
+  sendWebRTCOffer, 
+  userProfile, 
+  isVideoEnabled, 
+  isAudioEnabled, 
+  addNotification, 
+  startStatsCollection, 
+  attemptReconnect
+]);
+
 
 const initializeWebRTCConnection = useCallback(async () => {
   // Prevent multiple initializations
@@ -613,7 +907,8 @@ const initializeWebRTCConnection = useCallback(async () => {
     roomId: callInfo.roomId,
     isCaller: callInfo.isCaller,
     partnerId: callInfo.partnerId,
-    hasLocalStream: !!localStreamRef.current
+    hasLocalStream: !!localStreamRef.current,
+    localTracks: localStreamRef.current.getTracks().length
   });
   
   initializationRef.current = true;
@@ -626,56 +921,67 @@ const initializeWebRTCConnection = useCallback(async () => {
     // Create peer connection
     const pc = createPeerConnection(servers);
     
-    // CRITICAL FIX: Add local stream tracks PROPERLY
+    // Add local stream tracks to the peer connection
     const localStream = localStreamRef.current;
     const tracks = localStream.getTracks();
     
-    console.log('🎬 Adding local tracks:', {
+    console.log('🎬 Adding local tracks to peer connection:', {
       totalTracks: tracks.length,
       videoTracks: localStream.getVideoTracks().length,
       audioTracks: localStream.getAudioTracks().length
     });
     
-    // Add each track with proper transceiver handling
+    // Add each track with proper error handling
     tracks.forEach(track => {
-      console.log(`📤 Adding ${track.kind} track to peer connection`);
+      console.log(`📤 Adding ${track.kind} track:`, {
+        trackId: track.id?.substring(0, 8),
+        enabled: track.enabled,
+        readyState: track.readyState
+      });
+      
       try {
-        // Find an available transceiver for this track type
+        // Try to add the track to the peer connection
+        const sender = pc.addTrack(track, localStream);
+        console.log(`✅ ${track.kind} track added successfully`, {
+          senderId: sender.id,
+          trackEnabled: sender.track?.enabled
+        });
+      } catch (error) {
+        console.error(`❌ Failed to add ${track.kind} track:`, error);
+        
+        // Try alternative method: replace transceiver track
         const transceivers = pc.getTransceivers();
         const transceiver = transceivers.find(t => 
           t.receiver.track?.kind === track.kind || 
           t.sender.track?.kind === track.kind
         );
         
-        if (transceiver && !transceiver.sender.track) {
-          // Use existing transceiver
+        if (transceiver) {
+          console.log(`🔄 Trying to replace track on transceiver for ${track.kind}`);
           transceiver.sender.replaceTrack(track);
-          console.log(`✅ Replaced track on existing ${track.kind} transceiver`);
-        } else {
-          // Add new track
-          pc.addTrack(track, localStream);
-          console.log(`✅ Added new ${track.kind} track`);
+          console.log(`✅ Track replaced on transceiver`);
         }
-      } catch (error) {
-        console.error(`❌ Failed to add ${track.kind} track:`, error);
       }
     });
     
-    // If we're the caller, create and send offer
-    if (callInfo.isCaller) {
-      console.log('📤 Creating offer as caller');
-      setTimeout(async () => {
-        try {
-          await createAndSendOffer(pc);
-        } catch (error) {
-          console.error('❌ Failed to create offer:', error);
-        }
-      }, 1000);
-    } else {
-      console.log('📥 Waiting for offer as callee');
-    }
-    
-    console.log('✅ WebRTC connection initialized successfully');
+    // Log final state
+    setTimeout(() => {
+      console.log('📊 Final peer connection state after initialization:');
+      const transceivers = pc.getTransceivers();
+      console.log(`Transceivers: ${transceivers.length}`);
+      
+      transceivers.forEach((tc, idx) => {
+        console.log(`  Transceiver ${idx}:`, {
+          kind: tc.receiver.track?.kind || tc.sender.track?.kind,
+          direction: tc.direction,
+          currentDirection: tc.currentDirection,
+          hasReceiverTrack: !!tc.receiver.track,
+          hasSenderTrack: !!tc.sender.track
+        });
+      });
+      
+      console.log('✅ WebRTC connection initialized successfully');
+    }, 500);
     
   } catch (error) {
     console.error('❌ Failed to initialize WebRTC:', error);
@@ -683,8 +989,7 @@ const initializeWebRTCConnection = useCallback(async () => {
     initializationRef.current = false;
     setConnectionStatus('failed');
   }
-}, [partner, callInfo, iceServers, createPeerConnection, addNotification]);
-
+}, [partner, callInfo, iceServers, createPeerConnection, fetchIceServers, addNotification]);
 
 
 
@@ -1433,6 +1738,67 @@ const handleWebRTCIceCandidate = useCallback(async (data) => {
     return { hasCamera: false, hasMicrophone: false };
   }
 };
+
+
+const checkStreamState = () => {
+  console.log('=== STREAM STATE DEBUG ===');
+  
+  // Check local stream
+  console.log('📱 Local Stream:', {
+    exists: !!localStreamRef.current,
+    active: localStreamRef.current?.active,
+    tracks: localStreamRef.current?.getTracks().length || 0,
+    videoTracks: localStreamRef.current?.getVideoTracks().length || 0,
+    audioTracks: localStreamRef.current?.getAudioTracks().length || 0
+  });
+  
+  // Check remote stream
+  console.log('📹 Remote Stream:', {
+    exists: !!remoteStreamRef.current,
+    active: remoteStreamRef.current?.active,
+    tracks: remoteStreamRef.current?.getTracks().length || 0,
+    videoTracks: remoteStreamRef.current?.getVideoTracks().length || 0,
+    audioTracks: remoteStreamRef.current?.getAudioTracks().length || 0
+  });
+  
+  // Check peer connection
+  if (peerConnectionRef.current) {
+    const pc = peerConnectionRef.current;
+    console.log('🔗 Peer Connection:', {
+      signalingState: pc.signalingState,
+      connectionState: pc.connectionState,
+      iceConnectionState: pc.iceConnectionState,
+      iceGatheringState: pc.iceGatheringState
+    });
+    
+    // Check receivers
+    const receivers = pc.getReceivers();
+    console.log('🎧 Receivers:', receivers.length);
+    receivers.forEach((receiver, idx) => {
+      console.log(`  Receiver ${idx}:`, {
+        trackKind: receiver.track?.kind,
+        trackId: receiver.track?.id?.substring(0, 8),
+        trackEnabled: receiver.track?.enabled,
+        trackState: receiver.track?.readyState
+      });
+    });
+    
+    // Check transceivers
+    const transceivers = pc.getTransceivers();
+    console.log('🔄 Transceivers:', transceivers.length);
+    transceivers.forEach((transceiver, idx) => {
+      console.log(`  Transceiver ${idx}:`, {
+        mid: transceiver.mid,
+        direction: transceiver.direction,
+        currentDirection: transceiver.currentDirection,
+        receiverTrack: transceiver.receiver.track?.kind,
+        senderTrack: transceiver.sender.track?.kind
+      });
+    });
+  }
+  
+  console.log('=== END DEBUG ===');
+};
  const cleanup = () => {
   console.log('🧹 Cleaning up video call');
   
@@ -1543,92 +1909,9 @@ const handleWebRTCIceCandidate = useCallback(async (data) => {
     }
   };
 
-  const startStatsCollection = () => {
-    if (statsIntervalRef.current) {
-      clearInterval(statsIntervalRef.current);
-    }
-    
-    statsIntervalRef.current = setInterval(async () => {
-      if (peerConnectionRef.current && connectionStatus === 'connected') {
-        try {
-          const stats = await peerConnectionRef.current.getStats();
-          let audioStats = { inbound: {}, outbound: {} };
-          let videoStats = { inbound: {}, outbound: {} };
-          
-          stats.forEach(report => {
-            if (report.type === 'inbound-rtp') {
-              if (report.kind === 'audio') {
-                audioStats.inbound = {
-                  packetsReceived: report.packetsReceived,
-                  packetsLost: report.packetsLost,
-                  jitter: report.jitter,
-                  bytesReceived: report.bytesReceived
-                };
-              } else if (report.kind === 'video') {
-                videoStats.inbound = {
-                  framesReceived: report.framesReceived,
-                  framesDecoded: report.framesDecoded,
-                  framesDropped: report.framesDropped,
-                  bytesReceived: report.bytesReceived,
-                  frameWidth: report.frameWidth,
-                  frameHeight: report.frameHeight,
-                  framesPerSecond: report.framesPerSecond
-                };
-              }
-            } else if (report.type === 'outbound-rtp') {
-              if (report.kind === 'audio') {
-                audioStats.outbound = {
-                  packetsSent: report.packetsSent,
-                  bytesSent: report.bytesSent
-                };
-              } else if (report.kind === 'video') {
-                videoStats.outbound = {
-                  framesSent: report.framesSent,
-                  framesEncoded: report.framesEncoded,
-                  bytesSent: report.bytesSent,
-                  frameWidth: report.frameWidth,
-                  frameHeight: report.frameHeight,
-                  framesPerSecond: report.framesPerSecond
-                };
-              }
-            } else if (report.type === 'candidate-pair' && report.state === 'succeeded') {
-              setCallStats(prev => ({
-                ...prev,
-                rtt: report.currentRoundTripTime * 1000,
-                availableOutgoingBitrate: report.availableOutgoingBitrate
-              }));
-            }
-          });
-          
-          setCallStats(prev => ({
-            ...prev,
-            audio: audioStats,
-            video: videoStats,
-            timestamp: Date.now()
-          }));
-        } catch (error) {
-          console.error('Error getting stats:', error);
-        }
-      }
-    }, 2000);
-  };
 
-  const attemptReconnect = () => {
-    if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
-      addNotification('Failed to reconnect after multiple attempts', 'error');
-      return;
-    }
-    
-    reconnectAttemptsRef.current += 1;
-    addNotification(`Reconnecting... (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})`, 'warning');
-    
-    setTimeout(() => {
-      if (callInfo.callId && callInfo.roomId) {
-        console.log('🔄 Attempting reconnect');
-        initializeWebRTCConnection();
-      }
-    }, 2000);
-  };
+
+
 
   const debugStreamInfo = () => {
   console.log('=== STREAM DEBUG INFO ===');
@@ -2092,18 +2375,18 @@ const handleWebRTCIceCandidate = useCallback(async (data) => {
           
           {/* Additional Controls */}
           <div className="flex justify-center space-x-4 mt-4">
-          <button
+      <button
   onClick={() => {
     const debugState = debugGetState?.();
     console.log('Debug State:', debugState);
     console.log('Call Info:', callInfo);
-    debugStreamInfo();
+    checkStreamState();
     addNotification('Debug info logged to console', 'info');
   }}
   className="px-4 py-2 bg-gradient-to-r from-gray-800/30 to-gray-900/30 hover:from-gray-700/30 hover:to-gray-800/30 rounded-lg text-sm transition-all duration-300 backdrop-blur-sm border border-gray-700/30"
 >
   <FaInfoCircle className="inline mr-2" />
-  Debug
+  Debug Stream
 </button>
             
             {callInfo.roomId && (
