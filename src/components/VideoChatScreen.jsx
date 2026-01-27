@@ -171,194 +171,277 @@ useEffect(() => {
     }
   };
 
-  const initializeLocalStream = async (forceRetry = false) => {
-    if (isInitializing && !forceRetry) {
-      console.log('⏳ Already initializing local stream');
-      return null;
+const initializeLocalStream = async (forceRetry = false) => {
+  if (isInitializing && !forceRetry) {
+    console.log('⏳ Already initializing local stream');
+    return null;
+  }
+  
+  setIsInitializing(true);
+  setDeviceError(null);
+  
+  console.log('🎥 Requesting media devices...');
+  
+  try {
+    // First, get all available devices
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const videoDevices = devices.filter(d => d.kind === 'videoinput');
+    const audioDevices = devices.filter(d => d.kind === 'audioinput');
+    
+    console.log('📱 Available devices:', {
+      video: videoDevices.length,
+      audio: audioDevices.length,
+      devices: devices.map(d => ({ 
+        kind: d.kind, 
+        label: d.label,
+        deviceId: d.deviceId 
+      }))
+    });
+    
+    // Stop any existing stream FIRST (critical)
+    if (localStreamRef.current) {
+      console.log('🛑 Stopping existing local stream tracks...');
+      localStreamRef.current.getTracks().forEach(track => {
+        track.stop();
+        console.log(`🛑 Stopped ${track.kind} track`);
+      });
+      localStreamRef.current = null;
     }
     
-    setIsInitializing(true);
-    setDeviceError(null);
+    // Wait a bit to allow device to be released
+    await new Promise(resolve => setTimeout(resolve, 100));
     
-    console.log('🎥 Requesting media devices...');
-    
-    try {
-      // First, get all available devices
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoDevices = devices.filter(d => d.kind === 'videoinput');
-      const audioDevices = devices.filter(d => d.kind === 'audioinput');
-      
-      console.log('📱 Available devices:', {
-        video: videoDevices.length,
-        audio: audioDevices.length,
-        devices: devices.map(d => ({ kind: d.kind, label: d.label }))
-      });
-      
-      // Stop any existing stream
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(track => {
-          track.stop();
-        });
-        localStreamRef.current = null;
+    // Build constraints based on available devices
+    let constraints = {
+      video: {
+        width: { ideal: 640 },
+        height: { ideal: 480 },
+        frameRate: { ideal: 24 }
+      },
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
       }
-      
-      // Build constraints based on available devices
-      const constraints = {
-        video: {
-          width: { ideal: 640 },
-          height: { ideal: 480 },
-          frameRate: { ideal: 24 }
-        },
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
-      };
-      
-      // If no video devices, use audio only
-      if (videoDevices.length === 0) {
-        console.warn('⚠️ No video devices found, using audio only');
-        constraints.video = false;
-      }
-      
-      // If no audio devices, use video only
-      if (audioDevices.length === 0) {
-        console.warn('⚠️ No audio devices found, using video only');
-        constraints.audio = false;
-      }
-      
-      // Request stream with error handling
-      let stream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia(constraints);
-      } catch (error) {
-        console.warn('⚠️ First attempt failed, trying fallback:', error.message);
-        
-        // Try with minimal constraints
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: videoDevices.length > 0,
-          audio: audioDevices.length > 0
-        });
-      }
-      
-      // Verify stream has tracks
-      const videoTracks = stream.getVideoTracks();
-      const audioTracks = stream.getAudioTracks();
-      
-      console.log('✅ Stream obtained:', {
-        videoTracks: videoTracks.length,
-        audioTracks: audioTracks.length,
-        videoEnabled: videoTracks[0]?.enabled,
-        audioEnabled: audioTracks[0]?.enabled
-      });
-      
-      // Set up track event listeners
-      videoTracks.forEach(track => {
-        track.onended = () => {
-          console.warn('Video track ended');
-          setIsVideoEnabled(false);
-        };
-        track.onmute = () => setIsVideoEnabled(false);
-        track.onunmute = () => setIsVideoEnabled(true);
-      });
-      
-      audioTracks.forEach(track => {
-        track.onended = () => {
-          console.warn('Audio track ended');
-          setIsAudioEnabled(false);
-        };
-        track.onmute = () => setIsAudioEnabled(false);
-        track.onunmute = () => setIsAudioEnabled(true);
-      });
-      
-      localStreamRef.current = stream;
-      setLocalStream(stream);
-      setHasLocalStream(true);
-      
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-        console.log('✅ Local video element updated');
-      }
-      
-      // Update enabled states based on actual track status
-      setIsVideoEnabled(videoTracks.length > 0 && videoTracks[0].enabled);
-      setIsAudioEnabled(audioTracks.length > 0 && audioTracks[0].enabled);
-      
-      streamRetryCountRef.current = 0;
-      return stream;
-      
-    } catch (error) {
-      console.error('❌ Failed to get local stream:', error);
-      
-      streamRetryCountRef.current += 1;
-      
-      if (streamRetryCountRef.current < maxStreamRetries) {
-        console.log(`🔄 Retrying stream (${streamRetryCountRef.current}/${maxStreamRetries})...`);
-        setDeviceError(`Failed to access camera/microphone. Retrying... (${streamRetryCountRef.current}/${maxStreamRetries})`);
-        
-        // Wait and retry
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        return initializeLocalStream(true);
-      }
-      
-      // All retries failed
-      setDeviceError('Cannot access camera or microphone. Please check permissions and try again.');
-      addNotification('Cannot access camera/microphone. Using placeholder.', 'error');
-      
-      // Create placeholder stream
-      return createPlaceholderStream();
-      
-    } finally {
-      setIsInitializing(false);
-    }
-  };
-
-  const createPlaceholderStream = () => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 640;
-    canvas.height = 480;
-    const ctx = canvas.getContext('2d');
-    
-    // Create animated placeholder
-    const drawPlaceholder = () => {
-      ctx.fillStyle = '#1a1a2e';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      
-      // Draw user icon
-      ctx.fillStyle = '#4f46e5';
-      ctx.beginPath();
-      ctx.arc(canvas.width / 2, canvas.height / 2 - 20, 60, 0, Math.PI * 2);
-      ctx.fill();
-      
-      ctx.fillStyle = 'white';
-      ctx.font = 'bold 48px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText('👤', canvas.width / 2, canvas.height / 2 - 10);
-      
-      ctx.fillStyle = '#9ca3af';
-      ctx.font = '16px Arial';
-      ctx.fillText('Camera Unavailable', canvas.width / 2, canvas.height / 2 + 60);
-      
-      ctx.fillStyle = '#6b7280';
-      ctx.font = '14px Arial';
-      ctx.fillText('Please check camera permissions', canvas.width / 2, canvas.height / 2 + 90);
     };
     
-    drawPlaceholder();
-    const stream = canvas.captureStream(1);
+    // If no video devices, use audio only
+    if (videoDevices.length === 0) {
+      console.warn('⚠️ No video devices found, using audio only');
+      constraints.video = false;
+    } else {
+      // Try specific device IDs to avoid "in use" errors
+      constraints.video.deviceId = { exact: videoDevices[0].deviceId };
+    }
+    
+    // If no audio devices, use video only
+    if (audioDevices.length === 0) {
+      console.warn('⚠️ No audio devices found, using video only');
+      constraints.audio = false;
+    } else {
+      constraints.audio.deviceId = { exact: audioDevices[0].deviceId };
+    }
+    
+    // Try different approaches to get the stream
+    let stream = null;
+    let attemptCount = 0;
+    const maxAttempts = 3;
+    
+    while (!stream && attemptCount < maxAttempts) {
+      attemptCount++;
+      console.log(`🔄 Attempt ${attemptCount}/${maxAttempts} to get media stream`);
+      
+      try {
+        // First try with specific constraints
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        console.log(`✅ Got stream on attempt ${attemptCount}`);
+      } catch (error) {
+        console.warn(`⚠️ Attempt ${attemptCount} failed:`, error.name, error.message);
+        
+        if (attemptCount < maxAttempts) {
+          // Wait before retry
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          // Try different constraints on retry
+          if (attemptCount === 2) {
+            // Second attempt: try without specific device IDs
+            console.log('🔄 Trying without specific device IDs...');
+            constraints = {
+              video: videoDevices.length > 0,
+              audio: audioDevices.length > 0
+            };
+          } else if (attemptCount === 3) {
+            // Third attempt: try with minimal constraints
+            console.log('🔄 Trying with minimal constraints...');
+            constraints = {
+              video: videoDevices.length > 0 ? {
+                width: { min: 320, ideal: 640, max: 1280 },
+                height: { min: 240, ideal: 480, max: 720 },
+                frameRate: { ideal: 15, max: 30 }
+              } : false,
+              audio: audioDevices.length > 0
+            };
+          }
+        }
+      }
+    }
+    
+    if (!stream) {
+      throw new Error('Could not access media devices after multiple attempts');
+    }
+    
+    // Verify stream has tracks
+    const videoTracks = stream.getVideoTracks();
+    const audioTracks = stream.getAudioTracks();
+    
+    console.log('✅ Stream obtained:', {
+      videoTracks: videoTracks.length,
+      audioTracks: audioTracks.length,
+      videoEnabled: videoTracks[0]?.enabled ?? false,
+      audioEnabled: audioTracks[0]?.enabled ?? false
+    });
+    
+    // Set up track event listeners
+    videoTracks.forEach(track => {
+      track.onended = () => {
+        console.warn('Video track ended');
+        setIsVideoEnabled(false);
+      };
+      track.onmute = () => {
+        console.log('Video track muted');
+        setIsVideoEnabled(false);
+      };
+      track.onunmute = () => {
+        console.log('Video track unmuted');
+        setIsVideoEnabled(true);
+      };
+    });
+    
+    audioTracks.forEach(track => {
+      track.onended = () => {
+        console.warn('Audio track ended');
+        setIsAudioEnabled(false);
+      };
+      track.onmute = () => {
+        console.log('Audio track muted');
+        setIsAudioEnabled(false);
+      };
+      track.onunmute = () => {
+        console.log('Audio track unmuted');
+        setIsAudioEnabled(true);
+      };
+    });
     
     localStreamRef.current = stream;
     setLocalStream(stream);
     setHasLocalStream(true);
-    setIsVideoEnabled(false);
     
     if (localVideoRef.current) {
       localVideoRef.current.srcObject = stream;
+      console.log('✅ Local video element updated');
+      
+      // Try to play the video
+      localVideoRef.current.play().catch(err => {
+        console.warn('⚠️ Local video auto-play failed:', err);
+      });
     }
     
+    // Update enabled states based on actual track status
+    setIsVideoEnabled(videoTracks.length > 0 && (videoTracks[0]?.enabled ?? true));
+    setIsAudioEnabled(audioTracks.length > 0 && (audioTracks[0]?.enabled ?? true));
+    
+    streamRetryCountRef.current = 0;
+    console.log('✅ Local stream initialization complete');
     return stream;
+    
+  } catch (error) {
+    console.error('❌ Failed to get local stream:', error.name, error.message);
+    
+    streamRetryCountRef.current += 1;
+    
+    if (streamRetryCountRef.current < maxStreamRetries) {
+      console.log(`🔄 Retrying stream (${streamRetryCountRef.current}/${maxStreamRetries})...`);
+      setDeviceError(`Failed to access camera/microphone. Retrying... (${streamRetryCountRef.current}/${maxStreamRetries})`);
+      
+      // Wait and retry with longer delay
+      await new Promise(resolve => setTimeout(resolve, 1000 * streamRetryCountRef.current));
+      return initializeLocalStream(true);
+    }
+    
+    // All retries failed
+    setDeviceError('Cannot access camera or microphone. Please check permissions and ensure no other app is using the camera.');
+    addNotification('Cannot access camera/microphone. Using placeholder.', 'error');
+    
+    // Create placeholder stream
+    return createPlaceholderStream();
+    
+  } finally {
+    setIsInitializing(false);
+  }
+};
+
+const createPlaceholderStream = () => {
+  console.log('🎭 Creating placeholder stream');
+  
+  const canvas = document.createElement('canvas');
+  canvas.width = 640;
+  canvas.height = 480;
+  const ctx = canvas.getContext('2d');
+  
+  // Create animated placeholder
+  let animationFrame = null;
+  let pulseValue = 0;
+  
+  const drawPlaceholder = () => {
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Pulsing circle
+    pulseValue = (pulseValue + 0.05) % (Math.PI * 2);
+    const pulseSize = Math.sin(pulseValue) * 10 + 70;
+    
+    // Draw user icon
+    ctx.fillStyle = '#4f46e5';
+    ctx.beginPath();
+    ctx.arc(canvas.width / 2, canvas.height / 2 - 20, pulseSize, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.fillStyle = 'white';
+    ctx.font = 'bold 48px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('👤', canvas.width / 2, canvas.height / 2 - 10);
+    
+    ctx.fillStyle = '#9ca3af';
+    ctx.font = '16px Arial';
+    ctx.fillText('Camera Unavailable', canvas.width / 2, canvas.height / 2 + 60);
+    
+    ctx.fillStyle = '#6b7280';
+    ctx.font = '14px Arial';
+    ctx.fillText('Please check camera permissions', canvas.width / 2, canvas.height / 2 + 90);
+    
+    // Continue animation
+    animationFrame = requestAnimationFrame(drawPlaceholder);
   };
+  
+  drawPlaceholder();
+  const stream = canvas.captureStream(15); // 15 FPS
+  
+  // Store animation frame for cleanup
+  stream._animationFrame = animationFrame;
+  
+  localStreamRef.current = stream;
+  setLocalStream(stream);
+  setHasLocalStream(true);
+  setIsVideoEnabled(false);
+  
+  if (localVideoRef.current) {
+    localVideoRef.current.srcObject = stream;
+  }
+  
+  return stream;
+};
+
+
 
   // ==================== WEBRTC CORE FUNCTIONS ====================
 
@@ -1331,63 +1414,105 @@ const handleWebRTCIceCandidate = useCallback(async (data) => {
     }, 500);
   };
 
-  const cleanup = () => {
-    console.log('🧹 Cleaning up video call');
+
+  const checkDevicePermissions = async () => {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const hasCamera = devices.some(device => device.kind === 'videoinput' && device.label);
+    const hasMicrophone = devices.some(device => device.kind === 'audioinput' && device.label);
     
-    // Reset refs
-    initializationRef.current = false;
-    videoMatchReadyRef.current = false;
-    streamRetryCountRef.current = 0;
-    reconnectAttemptsRef.current = 0;
-    
-    // Stop all media tracks
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => {
-        track.stop();
-      });
-      localStreamRef.current = null;
-    }
-    
-    if (screenStreamRef.current) {
-      screenStreamRef.current.getTracks().forEach(track => track.stop());
-      screenStreamRef.current = null;
-    }
-    
-    // Close peer connection
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
-    }
-    
-    // Clear refs
-    if (localVideoRef.current) {
-      localVideoRef.current.srcObject = null;
-    }
-    
-    if (remoteVideoRef.current) {
-      remoteVideoRef.current.srcObject = null;
-    }
-    
-    // Reset state
-    setLocalStream(null);
-    setRemoteStream(null);
-    setConnectionStatus('disconnected');
-    setIsScreenSharing(false);
-    setIsVideoEnabled(true);
-    setIsAudioEnabled(true);
-    setCallDuration(0);
-    setCallStats(null);
-    setHasLocalStream(false);
-    setCallInfo({
-      callId: null,
-      roomId: null,
-      isCaller: false,
-      partnerId: null,
-      initialized: false
+    console.log('🔍 Device permission check:', {
+      hasCamera,
+      hasMicrophone,
+      devices: devices.map(d => ({ kind: d.kind, hasLabel: !!d.label }))
     });
-    setRetryCount(0);
-    setDeviceError(null);
-  };
+    
+    return { hasCamera, hasMicrophone };
+  } catch (error) {
+    console.error('❌ Error checking device permissions:', error);
+    return { hasCamera: false, hasMicrophone: false };
+  }
+};
+ const cleanup = () => {
+  console.log('🧹 Cleaning up video call');
+  
+  // Stop placeholder animation if exists
+  if (localStreamRef.current?._animationFrame) {
+    cancelAnimationFrame(localStreamRef.current._animationFrame);
+  }
+  
+  // Reset refs
+  initializationRef.current = false;
+  videoMatchReadyRef.current = false;
+  streamRetryCountRef.current = 0;
+  reconnectAttemptsRef.current = 0;
+  
+  // Stop all media tracks
+  if (localStreamRef.current) {
+    console.log('🛑 Stopping local stream tracks...');
+    localStreamRef.current.getTracks().forEach(track => {
+      console.log(`🛑 Stopping ${track.kind} track`);
+      track.stop();
+    });
+    localStreamRef.current = null;
+  }
+  
+  if (remoteStreamRef.current) {
+    console.log('🛑 Stopping remote stream tracks...');
+    remoteStreamRef.current.getTracks().forEach(track => {
+      console.log(`🛑 Stopping ${track.kind} track`);
+      track.stop();
+    });
+    remoteStreamRef.current = null;
+  }
+  
+  if (screenStreamRef.current) {
+    console.log('🛑 Stopping screen stream tracks...');
+    screenStreamRef.current.getTracks().forEach(track => {
+      console.log(`🛑 Stopping ${track.kind} track`);
+      track.stop();
+    });
+    screenStreamRef.current = null;
+  }
+  
+  // Close peer connection
+  if (peerConnectionRef.current) {
+    console.log('🛑 Closing peer connection...');
+    peerConnectionRef.current.close();
+    peerConnectionRef.current = null;
+  }
+  
+  // Clear refs
+  if (localVideoRef.current) {
+    localVideoRef.current.srcObject = null;
+  }
+  
+  if (remoteVideoRef.current) {
+    remoteVideoRef.current.srcObject = null;
+  }
+  
+  // Reset state
+  setLocalStream(null);
+  setRemoteStream(null);
+  setConnectionStatus('disconnected');
+  setIsScreenSharing(false);
+  setIsVideoEnabled(true);
+  setIsAudioEnabled(true);
+  setCallDuration(0);
+  setCallStats(null);
+  setHasLocalStream(false);
+  setCallInfo({
+    callId: null,
+    roomId: null,
+    isCaller: false,
+    partnerId: null,
+    initialized: false
+  });
+  setRetryCount(0);
+  setDeviceError(null);
+};
+
+
 
   const monitorRemoteStream = (stream) => {
     const videoTrack = stream.getVideoTracks()[0];
