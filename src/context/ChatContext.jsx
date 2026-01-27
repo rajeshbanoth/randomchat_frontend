@@ -2098,7 +2098,11 @@ const debugForcePartnerUpdate = useCallback((partnerData) => {
     // Actions
     setCurrentScreen: (screen) => safeSetState(setCurrentScreen, screen),
     setSearching: (value) => safeSetState(setSearching, value),
-    setInterests: (value) => safeSetState(setInterests, value),
+    // setInterests: (value) => safeSetState(setInterests, value),
+
+      setInterests: useCallback((value) => {
+  safeSetState(setInterests, value);
+}, [setInterests]),
     setAutoConnect: (value) => safeSetState(setAutoConnect, value),
     
     // Functions
