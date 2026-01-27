@@ -31,6 +31,7 @@ const VideoChatScreen = () => {
     debugGetState,
     debugForcePartnerUpdate
   } = useChat();
+  
   // Refs
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
@@ -56,12 +57,20 @@ const VideoChatScreen = () => {
   const [debugInfo, setDebugInfo] = useState(null);
   const [activeTheme, setActiveTheme] = useState('midnight');
   const [partnerDisconnected, setPartnerDisconnected] = useState(false);
-  const [videoCallId, setVideoCallId] = useState(null);
-  const [roomId, setRoomId] = useState(null);
-  const [isCaller, setIsCaller] = useState(false);
+  
+  // CRITICAL: Use a single source for call info
+  const [callInfo, setCallInfo] = useState({
+    callId: null,
+    roomId: null,
+    isCaller: false,
+    partnerId: null,
+    initialized: false
+  });
+  
   const [hasLocalStream, setHasLocalStream] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const [isInitializing, setIsInitializing] = useState(false);
+  const [deviceError, setDeviceError] = useState(null);
   
   const callTimerRef = useRef(null);
   const controlsTimeoutRef = useRef(null);
@@ -71,6 +80,9 @@ const VideoChatScreen = () => {
   const initializationRef = useRef(false);
   const videoMatchReadyRef = useRef(false);
   const retryTimeoutRef = useRef(null);
+  const streamRetryCountRef = useRef(0);
+  const maxStreamRetries = 3;
+  
   const themes = {
     midnight: 'from-gray-900 to-black',
     ocean: 'from-blue-900/30 to-teal-900/30',
@@ -78,52 +90,73 @@ const VideoChatScreen = () => {
     forest: 'from-emerald-900/30 to-green-900/30',
     sunset: 'from-orange-900/30 to-rose-900/30'
   };
+
   // ==================== INITIALIZATION ====================
+  
   const fetchIceServers = async () => {
     try {
-      const url = import.meta.env.VITE_BACKEND_URL+"/webrtc/config" || 'http://localhost:5000/webrtc/config';
       const response = await fetch('https://randomchat-lfo7.onrender.com/webrtc/config');
       const config = await response.json();
-      setIceServers(config.iceServers || []);
       console.log('🧊 ICE servers loaded:', config.iceServers?.length || 0);
+      
+      if (config.iceServers && config.iceServers.length > 0) {
+        setIceServers(config.iceServers);
+        return config.iceServers;
+      } else {
+        // Fallback to public STUN servers
+        const fallbackServers = [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' }
+        ];
+        setIceServers(fallbackServers);
+        return fallbackServers;
+      }
     } catch (error) {
       console.error('Failed to fetch ICE servers:', error);
       // Fallback to public STUN servers
-      setIceServers([
+      const fallbackServers = [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' }
-      ]);
+      ];
+      setIceServers(fallbackServers);
+      return fallbackServers;
     }
   };
-  const initializeLocalStream = async () => {
-    if (isInitializing) {
+
+  const initializeLocalStream = async (forceRetry = false) => {
+    if (isInitializing && !forceRetry) {
       console.log('⏳ Already initializing local stream');
-      return;
+      return null;
     }
+    
     setIsInitializing(true);
-    console.log('🎥 Requesting media devices');
+    setDeviceError(null);
+    
+    console.log('🎥 Requesting media devices...');
+    
     try {
-      // First, check if we have permissions and available devices
+      // First, get all available devices
       const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoDevices = devices.filter(device => device.kind === 'videoinput');
-      const audioDevices = devices.filter(device => device.kind === 'audioinput');
+      const videoDevices = devices.filter(d => d.kind === 'videoinput');
+      const audioDevices = devices.filter(d => d.kind === 'audioinput');
       
       console.log('📱 Available devices:', {
         video: videoDevices.length,
-        audio: audioDevices.length
+        audio: audioDevices.length,
+        devices: devices.map(d => ({ kind: d.kind, label: d.label }))
       });
-      if (videoDevices.length === 0 || audioDevices.length === 0) {
-        throw new Error('No media devices found');
-      }
-      // Stop any existing stream first
+      
+      // Stop any existing stream
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(track => {
           track.stop();
         });
         localStreamRef.current = null;
       }
-      // Request new stream with error handling for busy devices
-      const stream = await navigator.mediaDevices.getUserMedia({
+      
+      // Build constraints based on available devices
+      const constraints = {
         video: {
           width: { ideal: 640 },
           height: { ideal: 480 },
@@ -134,47 +167,62 @@ const VideoChatScreen = () => {
           noiseSuppression: true,
           autoGainControl: true
         }
-      }).catch(async (error) => {
-        console.warn('⚠️ First attempt failed, trying fallback constraints:', error.message);
+      };
+      
+      // If no video devices, use audio only
+      if (videoDevices.length === 0) {
+        console.warn('⚠️ No video devices found, using audio only');
+        constraints.video = false;
+      }
+      
+      // If no audio devices, use video only
+      if (audioDevices.length === 0) {
+        console.warn('⚠️ No audio devices found, using video only');
+        constraints.audio = false;
+      }
+      
+      // Request stream with error handling
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (error) {
+        console.warn('⚠️ First attempt failed, trying fallback:', error.message);
         
-        // Try without specific constraints
-        return navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: true
-        }).catch(async (error2) => {
-          console.warn('⚠️ Second attempt failed, trying audio only:', error2.message);
-          
-          // Try audio only
-          return navigator.mediaDevices.getUserMedia({
-            video: false,
-            audio: true
-          }).then(audioStream => {
-            // Add placeholder video track
-            const canvas = document.createElement('canvas');
-            canvas.width = 640;
-            canvas.height = 480;
-            const ctx = canvas.getContext('2d');
-            
-            // Draw placeholder
-            ctx.fillStyle = '#333';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = '#666';
-            ctx.font = '48px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText('No Camera', canvas.width/2, canvas.height/2);
-            
-            const placeholderStream = canvas.captureStream(24);
-            const placeholderTrack = placeholderStream.getVideoTracks()[0];
-            
-            // Combine audio with placeholder video
-            const combinedStream = new MediaStream([
-              ...audioStream.getAudioTracks(),
-              placeholderTrack
-            ]);
-            
-            return combinedStream;
-          });
+        // Try with minimal constraints
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: videoDevices.length > 0,
+          audio: audioDevices.length > 0
         });
+      }
+      
+      // Verify stream has tracks
+      const videoTracks = stream.getVideoTracks();
+      const audioTracks = stream.getAudioTracks();
+      
+      console.log('✅ Stream obtained:', {
+        videoTracks: videoTracks.length,
+        audioTracks: audioTracks.length,
+        videoEnabled: videoTracks[0]?.enabled,
+        audioEnabled: audioTracks[0]?.enabled
+      });
+      
+      // Set up track event listeners
+      videoTracks.forEach(track => {
+        track.onended = () => {
+          console.warn('Video track ended');
+          setIsVideoEnabled(false);
+        };
+        track.onmute = () => setIsVideoEnabled(false);
+        track.onunmute = () => setIsVideoEnabled(true);
+      });
+      
+      audioTracks.forEach(track => {
+        track.onended = () => {
+          console.warn('Audio track ended');
+          setIsAudioEnabled(false);
+        };
+        track.onmute = () => setIsAudioEnabled(false);
+        track.onunmute = () => setIsAudioEnabled(true);
       });
       
       localStreamRef.current = stream;
@@ -183,57 +231,435 @@ const VideoChatScreen = () => {
       
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
-        console.log('✅ Local stream initialized');
+        console.log('✅ Local video element updated');
       }
-      // Check if we have actual video track
-      const videoTrack = stream.getVideoTracks()[0];
-      if (videoTrack && videoTrack.readyState === 'ended') {
-        console.warn('⚠️ Video track ended immediately');
-        setIsVideoEnabled(false);
-      }
+      
+      // Update enabled states based on actual track status
+      setIsVideoEnabled(videoTracks.length > 0 && videoTracks[0].enabled);
+      setIsAudioEnabled(audioTracks.length > 0 && audioTracks[0].enabled);
+      
+      streamRetryCountRef.current = 0;
+      return stream;
+      
     } catch (error) {
       console.error('❌ Failed to get local stream:', error);
       
-      // Create a placeholder stream for testing
-      const canvas = document.createElement('canvas');
-      canvas.width = 640;
-      canvas.height = 480;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#333';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = '#666';
-      ctx.font = '48px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText('Camera Unavailable', canvas.width/2, canvas.height/2);
+      streamRetryCountRef.current += 1;
       
-      const placeholderStream = canvas.captureStream(24);
-      localStreamRef.current = placeholderStream;
-      setLocalStream(placeholderStream);
-      setHasLocalStream(true);
-      setIsVideoEnabled(false);
-      
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = placeholderStream;
+      if (streamRetryCountRef.current < maxStreamRetries) {
+        console.log(`🔄 Retrying stream (${streamRetryCountRef.current}/${maxStreamRetries})...`);
+        setDeviceError(`Failed to access camera/microphone. Retrying... (${streamRetryCountRef.current}/${maxStreamRetries})`);
+        
+        // Wait and retry
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        return initializeLocalStream(true);
       }
       
-      addNotification('Using placeholder video. Camera may be in use.', 'warning');
+      // All retries failed
+      setDeviceError('Cannot access camera or microphone. Please check permissions and try again.');
+      addNotification('Cannot access camera/microphone. Using placeholder.', 'error');
+      
+      // Create placeholder stream
+      return createPlaceholderStream();
+      
     } finally {
       setIsInitializing(false);
     }
   };
+
+  const createPlaceholderStream = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 640;
+    canvas.height = 480;
+    const ctx = canvas.getContext('2d');
+    
+    // Create animated placeholder
+    const drawPlaceholder = () => {
+      ctx.fillStyle = '#1a1a2e';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // Draw user icon
+      ctx.fillStyle = '#4f46e5';
+      ctx.beginPath();
+      ctx.arc(canvas.width / 2, canvas.height / 2 - 20, 60, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.fillStyle = 'white';
+      ctx.font = 'bold 48px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText('👤', canvas.width / 2, canvas.height / 2 - 10);
+      
+      ctx.fillStyle = '#9ca3af';
+      ctx.font = '16px Arial';
+      ctx.fillText('Camera Unavailable', canvas.width / 2, canvas.height / 2 + 60);
+      
+      ctx.fillStyle = '#6b7280';
+      ctx.font = '14px Arial';
+      ctx.fillText('Please check camera permissions', canvas.width / 2, canvas.height / 2 + 90);
+    };
+    
+    drawPlaceholder();
+    const stream = canvas.captureStream(1);
+    
+    localStreamRef.current = stream;
+    setLocalStream(stream);
+    setHasLocalStream(true);
+    setIsVideoEnabled(false);
+    
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = stream;
+    }
+    
+    return stream;
+  };
+
+  // ==================== WEBRTC CORE FUNCTIONS ====================
+
+  const createPeerConnection = useCallback((servers) => {
+    console.log('🔗 Creating peer connection with ICE servers:', servers.length);
+    
+    const configuration = {
+      iceServers: servers,
+      iceCandidatePoolSize: 10,
+      iceTransportPolicy: 'all',
+      bundlePolicy: 'max-bundle',
+      rtcpMuxPolicy: 'require'
+    };
+    
+    const pc = new RTCPeerConnection(configuration);
+    peerConnectionRef.current = pc;
+    
+    // Set up event handlers
+    pc.onicecandidate = (event) => {
+      if (event.candidate && socket?.connected && callInfo.partnerId) {
+        console.log('🧊 Sending ICE candidate to partner:', callInfo.partnerId);
+        sendWebRTCIceCandidate({
+          to: callInfo.partnerId,
+          candidate: event.candidate,
+          callId: callInfo.callId,
+          roomId: callInfo.roomId
+        });
+      }
+    };
+    
+    pc.oniceconnectionstatechange = () => {
+      console.log('🧊 ICE connection state:', pc.iceConnectionState);
+      if (pc.iceConnectionState === 'failed') {
+        console.warn('⚠️ ICE connection failed, restarting ICE...');
+        pc.restartIce();
+      }
+    };
+    
+    pc.onconnectionstatechange = () => {
+      console.log('🔄 Peer connection state:', pc.connectionState);
+      setConnectionStatus(pc.connectionState);
+      
+      if (pc.connectionState === 'connected') {
+        console.log('✅ Peer connection established!');
+        addNotification('Video call connected!', 'success');
+        startStatsCollection();
+      } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+        console.warn(`⚠️ Peer connection ${pc.connectionState}`);
+        if (pc.connectionState === 'failed' && reconnectAttemptsRef.current < maxReconnectAttempts) {
+          attemptReconnect();
+        }
+      }
+    };
+    
+    pc.ontrack = (event) => {
+      console.log('🎬 Received remote track:', event.track.kind);
+      
+      if (event.streams && event.streams[0]) {
+        const remoteStream = event.streams[0];
+        console.log('📹 Remote stream received:', remoteStream.id);
+        
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = remoteStream;
+        }
+        
+        setRemoteStream(remoteStream);
+        monitorRemoteStream(remoteStream);
+        
+        addNotification('Partner video received', 'success');
+      }
+    };
+    
+    pc.onnegotiationneeded = async () => {
+      console.log('🔁 Negotiation needed');
+      if (callInfo.isCaller && peerConnectionRef.current) {
+        await createAndSendOffer();
+      }
+    };
+    
+    return pc;
+  }, [socket, callInfo, sendWebRTCIceCandidate, addNotification]);
+
+  const initializeWebRTCConnection = useCallback(async () => {
+    // Prevent multiple initializations
+    if (initializationRef.current) {
+      console.log('⚠️ WebRTC already initialized');
+      return;
+    }
+    
+    if (!partner) {
+      console.error('❌ Cannot initialize WebRTC: No partner');
+      return;
+    }
+    
+    if (!localStreamRef.current) {
+      console.error('❌ Cannot initialize WebRTC: No local stream');
+      return;
+    }
+    
+    if (!callInfo.callId || !callInfo.roomId) {
+      console.error('❌ Cannot initialize WebRTC: Missing call info');
+      return;
+    }
+    
+    console.log('🚀 Initializing WebRTC connection with:', {
+      callId: callInfo.callId,
+      roomId: callInfo.roomId,
+      isCaller: callInfo.isCaller,
+      partnerId: callInfo.partnerId,
+      hasLocalStream: !!localStreamRef.current
+    });
+    
+    initializationRef.current = true;
+    setConnectionStatus('connecting');
+    
+    try {
+      // Get ICE servers
+      const servers = iceServers.length > 0 ? iceServers : await fetchIceServers();
+      
+      // Create peer connection
+      const pc = createPeerConnection(servers);
+      
+      // Add local stream tracks
+      const localStream = localStreamRef.current;
+      localStream.getTracks().forEach(track => {
+        console.log(`🎬 Adding ${track.kind} track to peer connection`);
+        pc.addTrack(track, localStream);
+      });
+      
+      // If we're the caller, create and send offer
+      if (callInfo.isCaller) {
+        console.log('📤 Creating offer as caller');
+        setTimeout(async () => {
+          try {
+            await createAndSendOffer(pc);
+          } catch (error) {
+            console.error('❌ Failed to create offer:', error);
+          }
+        }, 1000);
+      } else {
+        console.log('📥 Waiting for offer as callee');
+      }
+      
+      console.log('✅ WebRTC connection initialized successfully');
+      
+    } catch (error) {
+      console.error('❌ Failed to initialize WebRTC:', error);
+      addNotification('Failed to start video call', 'error');
+      initializationRef.current = false;
+      setConnectionStatus('failed');
+    }
+  }, [partner, callInfo, iceServers, createPeerConnection, addNotification]);
+
+  const createAndSendOffer = async (pc = peerConnectionRef.current) => {
+    if (!pc || !socket?.connected || !callInfo.partnerId) return;
+    
+    try {
+      const offer = await pc.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true
+      });
+      
+      console.log('📝 Created offer:', offer.type);
+      
+      await pc.setLocalDescription(offer);
+      
+      sendWebRTCOffer({
+        to: callInfo.partnerId,
+        sdp: offer,
+        callId: callInfo.callId,
+        roomId: callInfo.roomId,
+        metadata: {
+          username: userProfile?.username || 'Anonymous',
+          videoEnabled: isVideoEnabled,
+          audioEnabled: isAudioEnabled
+        }
+      });
+      
+      console.log('📤 Sent WebRTC offer to partner:', callInfo.partnerId);
+      
+    } catch (error) {
+      console.error('❌ Error creating/sending offer:', error);
+    }
+  };
+
+  // ==================== EVENT HANDLERS ====================
+
+  const handleVideoMatchReady = useCallback((data) => {
+    console.log('🎯 Video match ready event received:', data);
+    
+    if (videoMatchReadyRef.current) {
+      console.log('⚠️ Already processed video match');
+      return;
+    }
+    
+    videoMatchReadyRef.current = true;
+    
+    // Extract partner ID from various possible locations
+    const partnerId = data.partnerId || 
+                     (partner?.id || partner?._id || partner?.partnerId);
+    
+    if (!partnerId) {
+      console.error('❌ No partner ID in video match data');
+      return;
+    }
+    
+    // Determine if we're the caller
+    const currentSocketId = socket?.id;
+    const isCaller = currentSocketId && partnerId && 
+                    (currentSocketId < partnerId);
+    
+    // Update call info
+    setCallInfo({
+      callId: data.callId,
+      roomId: data.roomId,
+      isCaller,
+      partnerId,
+      initialized: false
+    });
+    
+    console.log('📞 Video call info updated:', {
+      callId: data.callId,
+      roomId: data.roomId,
+      isCaller,
+      partnerId,
+      socketId: currentSocketId
+    });
+    
+    // Update partner if needed
+    if (partner && debugForcePartnerUpdate) {
+      debugForcePartnerUpdate({
+        ...partner,
+        videoCallId: data.callId,
+        roomId: data.roomId,
+        partnerProfile: data.partnerProfile
+      });
+    }
+    
+    addNotification('Video call is ready!', 'success');
+  }, [socket, partner, debugForcePartnerUpdate, addNotification]);
+
+  const handleWebRTCOffer = useCallback(async (data) => {
+    console.log('📞 Received WebRTC offer:', {
+      from: data.from,
+      callId: data.callId,
+      sdpType: data.sdp?.type
+    });
+    
+    // Update call info if we're the callee
+    if (!callInfo.isCaller && data.sdp) {
+      setCallInfo(prev => ({
+        ...prev,
+        callId: data.callId || prev.callId,
+        partnerId: data.from || prev.partnerId,
+        isCaller: false
+      }));
+      
+      if (peerConnectionRef.current) {
+        try {
+          await peerConnectionRef.current.setRemoteDescription(
+            new RTCSessionDescription(data.sdp)
+          );
+          console.log('✅ Remote description set from offer');
+          
+          // Create and send answer
+          const answer = await peerConnectionRef.current.createAnswer();
+          await peerConnectionRef.current.setLocalDescription(answer);
+          
+          sendWebRTCAnswer({
+            to: data.from,
+            sdp: answer,
+            callId: data.callId || callInfo.callId,
+            roomId: callInfo.roomId
+          });
+          
+          console.log('📤 Sent WebRTC answer');
+        } catch (error) {
+          console.error('❌ Error handling offer:', error);
+        }
+      }
+    }
+  }, [callInfo, sendWebRTCAnswer]);
+
+  const handleWebRTCAnswer = useCallback(async (data) => {
+    console.log('✅ Received WebRTC answer:', {
+      from: data.from,
+      callId: data.callId,
+      sdpType: data.sdp?.type
+    });
+    
+    if (callInfo.isCaller && peerConnectionRef.current && data.sdp) {
+      try {
+        await peerConnectionRef.current.setRemoteDescription(
+          new RTCSessionDescription(data.sdp)
+        );
+        console.log('✅ Remote description set from answer');
+      } catch (error) {
+        console.error('❌ Error handling answer:', error);
+      }
+    }
+  }, [callInfo]);
+
+  const handleWebRTCIceCandidate = useCallback(async (data) => {
+    console.log('🧊 Received ICE candidate:', data.candidate);
+    
+    if (peerConnectionRef.current && data.candidate) {
+      try {
+        await peerConnectionRef.current.addIceCandidate(
+          new RTCIceCandidate(data.candidate)
+        );
+        console.log('✅ ICE candidate added');
+      } catch (error) {
+        console.error('❌ Error adding ICE candidate:', error);
+      }
+    }
+  }, []);
+
+  const handleWebRTCEnd = useCallback((data) => {
+    console.log('📵 WebRTC call ended:', data);
+    addNotification('Partner ended the video call', 'info');
+    handleDisconnect();
+  }, [addNotification]);
+
   // ==================== EFFECTS ====================
+
   useEffect(() => {
     console.log('🎬 VideoChatScreen mounted');
     
-    // Reset refs
-    initializationRef.current = false;
-    videoMatchReadyRef.current = false;
-    
-    // Get ICE servers
+    // Initialize
     fetchIceServers();
+    initializeLocalStream();
     
-    // Setup socket listeners
-    setupWebRTCListeners();
+    // Setup global event listeners
+    const handleVideoCallReady = (event) => {
+      console.log('🔔 Custom video-call-ready event:', event.detail);
+      handleVideoMatchReady(event.detail);
+    };
+    
+    const handleWebRTCOfferEvent = (event) => handleWebRTCOffer(event.detail);
+    const handleWebRTCAnswerEvent = (event) => handleWebRTCAnswer(event.detail);
+    const handleWebRTCIceCandidateEvent = (event) => handleWebRTCIceCandidate(event.detail);
+    const handleWebRTCEndEvent = (event) => handleWebRTCEnd(event.detail);
+    
+    window.addEventListener('video-call-ready', handleVideoCallReady);
+    window.addEventListener('webrtc-offer', handleWebRTCOfferEvent);
+    window.addEventListener('webrtc-answer', handleWebRTCAnswerEvent);
+    window.addEventListener('webrtc-ice-candidate', handleWebRTCIceCandidateEvent);
+    window.addEventListener('webrtc-end', handleWebRTCEndEvent);
     
     // Start call timer
     callTimerRef.current = setInterval(() => {
@@ -263,368 +689,260 @@ const VideoChatScreen = () => {
     return () => {
       console.log('🧹 VideoChatScreen cleanup');
       cleanup();
+      
       window.removeEventListener('mousemove', handleMouseMove);
-      if (controlsTimeoutRef.current) {
-        clearTimeout(controlsTimeoutRef.current);
-      }
-      if (callTimerRef.current) {
-        clearInterval(callTimerRef.current);
-      }
-      if (statsIntervalRef.current) {
-        clearInterval(statsIntervalRef.current);
-      }
-      if (retryTimeoutRef.current) {
-        clearTimeout(retryTimeoutRef.current);
-      }
+      window.removeEventListener('video-call-ready', handleVideoCallReady);
+      window.removeEventListener('webrtc-offer', handleWebRTCOfferEvent);
+      window.removeEventListener('webrtc-answer', handleWebRTCAnswerEvent);
+      window.removeEventListener('webrtc-ice-candidate', handleWebRTCIceCandidateEvent);
+      window.removeEventListener('webrtc-end', handleWebRTCEndEvent);
+      
+      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+      if (callTimerRef.current) clearInterval(callTimerRef.current);
+      if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
+      if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
     };
   }, []);
-  // Initialize local stream when component mounts
+
+  // Initialize WebRTC when all conditions are met
   useEffect(() => {
-    if (!hasLocalStream && !isInitializing) {
-      console.log('🔄 Initializing local stream');
-      initializeLocalStream();
+    const shouldInitialize = 
+      localStreamRef.current && 
+      partner && 
+      callInfo.callId && 
+      callInfo.roomId && 
+      !initializationRef.current &&
+      !callInfo.initialized;
+    
+    if (shouldInitialize) {
+      console.log('🚀 Conditions met for WebRTC initialization');
+      initializeWebRTCConnection();
+      setCallInfo(prev => ({ ...prev, initialized: true }));
     }
-  }, [hasLocalStream, isInitializing]);
-  // Trigger WebRTC initialization when all required state is ready
-  useEffect(() => {
-    if (localStream && partner && videoCallId && roomId && !initializationRef.current) {
-      console.log('🚀 Initializing WebRTC with local stream');
-      initializeWebRTCConnection(videoCallId, roomId, isCaller);
+  }, [localStreamRef.current, partner, callInfo, initializeWebRTCConnection]);
+
+  // ==================== CONTROL FUNCTIONS ====================
+
+  const toggleVideo = () => {
+    if (localStreamRef.current) {
+      const videoTrack = localStreamRef.current.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.enabled = !videoTrack.enabled;
+        setIsVideoEnabled(videoTrack.enabled);
+        addNotification(videoTrack.enabled ? 'Video enabled' : 'Video disabled', 'info');
+      }
     }
-  }, [localStream, partner, videoCallId, roomId, isCaller]);
-  // Listen for video match events
-  useEffect(() => {
-    console.log('🎥 Setting up video match listener');
-    
-    const handleVideoMatchReady = (data) => {
-      console.log('🎯 Video match ready event received:', data);
-      
-      // Prevent multiple initializations
-      if (videoMatchReadyRef.current) {
-        console.log('⚠️ Already processed video match, ignoring');
-        return;
-      }
-      
-      videoMatchReadyRef.current = true;
-      
-      // Store video call info
-      setVideoCallId(data.callId);
-      setRoomId(data.roomId);
-      
-      // Determine if we're the caller (lower socket ID)
-      const currentSocketId = socket?.id;
-      const partnerId = data.partnerId;
-      const isCallerValue = currentSocketId && partnerId &&
-                          (currentSocketId < partnerId);
-      setIsCaller(isCallerValue);
-      
-      console.log('📞 Video call info:', {
-        callId: data.callId,
-        roomId: data.roomId,
-        isCaller: isCallerValue,
-        socketId: currentSocketId,
-        partnerId: partnerId
-      });
-    };
-    const handleVideoMatch = (event) => {
-      console.log('🔔 Custom video-match event:', event.detail);
-      if (event.detail && event.detail.partner) {
-        // Update partner state if needed
-        if (debugForcePartnerUpdate) {
-          debugForcePartnerUpdate(event.detail.partner);
-        }
-      }
-    };
-    // Listen for server events
-    if (socket) {
-      socket.on('video-match-ready', handleVideoMatchReady);
-      
-      // Also listen for custom event from ChatContext
-      window.addEventListener('video-match', handleVideoMatch);
-      window.addEventListener('video-call-ready', handleVideoMatchReady);
-    }
-    return () => {
-      if (socket) {
-        socket.off('video-match-ready', handleVideoMatchReady);
-      }
-      window.removeEventListener('video-match', handleVideoMatch);
-      window.removeEventListener('video-call-ready', handleVideoMatchReady);
-    };
-  }, [socket, debugForcePartnerUpdate]);
-  // Setup WebRTC listeners once when socket is available
-  useEffect(() => {
-    if (socket && !initializationRef.current) {
-      setupWebRTCListeners();
-    }
-  }, [socket]);
-  // ==================== WEBRTC FUNCTIONS ====================
-  const setupWebRTCListeners = () => {
-    if (!socket) return;
-    
-    console.log('🔌 Setting up WebRTC socket listeners');
-    
-    const handleWebRTCOffer = async (data) => {
-      console.log('📞 Received WebRTC offer:', {
-        from: data.from,
-        callId: data.callId,
-        sdpType: data.sdp?.type
-      });
-      
-      if (!isCaller && peerConnectionRef.current && data.sdp) {
-        try {
-          await peerConnectionRef.current.setRemoteDescription(
-            new RTCSessionDescription(data.sdp)
-          );
-          console.log('✅ Remote description set from offer');
-          
-          // Create and send answer
-          const answer = await peerConnectionRef.current.createAnswer();
-          await peerConnectionRef.current.setLocalDescription(answer);
-          
-          sendWebRTCAnswer({
-            to: data.from,
-            sdp: answer,
-            callId: data.callId || videoCallId
-          });
-          console.log('📤 Sent WebRTC answer');
-        } catch (error) {
-          console.error('❌ Error handling offer:', error);
-        }
-      }
-    };
-    
-    const handleWebRTCAnswer = async (data) => {
-      console.log('✅ Received WebRTC answer:', {
-        from: data.from,
-        callId: data.callId,
-        sdpType: data.sdp?.type
-      });
-      
-      if (isCaller && peerConnectionRef.current && data.sdp) {
-        try {
-          await peerConnectionRef.current.setRemoteDescription(
-            new RTCSessionDescription(data.sdp)
-          );
-          console.log('✅ Remote description set from answer');
-          setConnectionStatus('connected');
-          addNotification('Video call connected!', 'success');
-        } catch (error) {
-          console.error('❌ Error handling answer:', error);
-        }
-      }
-    };
-    
-    const handleWebRTCIceCandidate = async (data) => {
-      console.log('🧊 Received ICE candidate:', data);
-      if (peerConnectionRef.current && data.candidate) {
-        try {
-          await peerConnectionRef.current.addIceCandidate(
-            new RTCIceCandidate(data.candidate)
-          );
-          console.log('✅ ICE candidate added');
-        } catch (error) {
-          console.error('❌ Error adding ICE candidate:', error);
-        }
-      }
-    };
-    
-    const handleWebRTCEnd = (data) => {
-      console.log('📵 WebRTC call ended:', data);
-      setConnectionStatus('disconnected');
-      addNotification('Partner ended the video call', 'info');
-      handleDisconnect();
-    };
-    
-    const handleWebRTCError = (data) => {
-      console.error('❌ WebRTC error:', data);
-      addNotification(`WebRTC error: ${data.error}`, 'error');
-    };
-    
-    const handlePartnerDisconnected = (data) => {
-      console.log('🔌 Partner disconnected in video chat');
-      setPartnerDisconnected(true);
-      setConnectionStatus('disconnected');
-      addNotification('Partner disconnected', 'warning');
-    };
-    
-    // Socket listeners
-    socket.on('webrtc-offer', handleWebRTCOffer);
-    socket.on('webrtc-answer', handleWebRTCAnswer);
-    socket.on('webrtc-ice-candidate', handleWebRTCIceCandidate);
-    socket.on('webrtc-end', handleWebRTCEnd);
-    socket.on('webrtc-error', handleWebRTCError);
-    socket.on('partnerDisconnected', handlePartnerDisconnected);
-    
-    return () => {
-      socket.off('webrtc-offer', handleWebRTCOffer);
-      socket.off('webrtc-answer', handleWebRTCAnswer);
-      socket.off('webrtc-ice-candidate', handleWebRTCIceCandidate);
-      socket.off('webrtc-end', handleWebRTCEnd);
-      socket.off('webrtc-error', handleWebRTCError);
-      socket.off('partnerDisconnected', handlePartnerDisconnected);
-    };
   };
-  const initializeWebRTCConnection = (callId, roomId, caller) => {
-    // Prevent multiple initializations
-    if (initializationRef.current) {
-      console.log('⚠️ WebRTC already initialized, skipping');
-      return;
+
+  const toggleAudio = () => {
+    if (localStreamRef.current) {
+      const audioTrack = localStreamRef.current.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+        setIsAudioEnabled(audioTrack.enabled);
+        addNotification(audioTrack.enabled ? 'Audio enabled' : 'Audio disabled', 'info');
+      }
     }
-    
-    initializationRef.current = true;
-    
-    console.log('🔗 Initializing WebRTC connection:', {
-      callId,
-      roomId,
-      caller,
-      hasLocalStream,
-      partner: !!partner
-    });
-    
-    if (!partner) {
-      console.error('❌ Cannot initialize WebRTC: No partner');
-      initializationRef.current = false;
-      return;
-    }
-    
+  };
+
+  const toggleScreenShare = async () => {
     try {
-      const configuration = {
-        iceServers: iceServers.length > 0 ? iceServers : [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ],
-        iceCandidatePoolSize: 10
-      };
-      
-      const pc = new RTCPeerConnection(configuration);
-      peerConnectionRef.current = pc;
-      
-      // Add local stream to connection
-      if (localStreamRef.current) {
-        const tracks = localStreamRef.current.getTracks();
-        console.log('🎬 Adding local tracks to peer connection:', tracks.length);
-        
-        tracks.forEach(track => {
-          try {
-            pc.addTrack(track, localStreamRef.current);
-            console.log(`✅ Added ${track.kind} track`);
-          } catch (error) {
-            console.error(`❌ Failed to add ${track.kind} track:`, error);
-          }
+      if (!isScreenSharing) {
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            cursor: "always",
+            displaySurface: "monitor"
+          },
+          audio: false
         });
+        
+        screenStreamRef.current = screenStream;
+        
+        // Replace video track in peer connection
+        const videoTrack = screenStream.getVideoTracks()[0];
+        const sender = peerConnectionRef.current?.getSenders()
+          .find(s => s.track?.kind === 'video');
+        
+        if (sender && videoTrack) {
+          sender.replaceTrack(videoTrack);
+          
+          // Update local video display
+          if (localVideoRef.current) {
+            localVideoRef.current.srcObject = screenStream;
+          }
+          
+          setIsScreenSharing(true);
+          addNotification('Screen sharing started', 'success');
+          
+          // Handle when user stops sharing via browser UI
+          videoTrack.onended = () => {
+            toggleScreenShare();
+          };
+        }
       } else {
-        console.warn('⚠️ No local stream to add to peer connection');
+        // Restore camera
+        const cameraStream = localStreamRef.current;
+        const cameraVideoTrack = cameraStream?.getVideoTracks()[0];
+        const sender = peerConnectionRef.current?.getSenders()
+          .find(s => s.track?.kind === 'video');
+        
+        if (sender && cameraVideoTrack) {
+          sender.replaceTrack(cameraVideoTrack);
+          
+          // Restore local video display
+          if (localVideoRef.current) {
+            localVideoRef.current.srcObject = cameraStream;
+          }
+          
+          // Stop screen stream
+          screenStreamRef.current?.getTracks().forEach(track => track.stop());
+          screenStreamRef.current = null;
+          
+          setIsScreenSharing(false);
+          addNotification('Screen sharing stopped', 'info');
+        }
       }
-      
-      // Handle remote stream
-      pc.ontrack = (event) => {
-        console.log('🎬 Received remote track:', event.track.kind);
-        
-        if (!remoteVideoRef.current) {
-          console.error('❌ No remote video ref');
-          return;
-        }
-        
-        if (event.streams && event.streams[0]) {
-          const remoteStream = event.streams[0];
-          console.log('📹 Remote stream received:', remoteStream.id);
-          
-          remoteVideoRef.current.srcObject = remoteStream;
-          setRemoteStream(remoteStream);
-          setConnectionStatus('connected');
-          
-          // Monitor remote stream for mute/unmute
-          monitorRemoteStream(remoteStream);
-          
-          addNotification('Partner video received', 'success');
-        }
-      };
-      
-      // Handle ICE candidates
-      pc.onicecandidate = (event) => {
-        if (event.candidate && socket && partner) {
-          const partnerId = partner.id || partner._id || partner.partnerId;
-          if (partnerId) {
-            sendWebRTCIceCandidate({
-              to: partnerId,
-              candidate: event.candidate,
-              callId: callId || videoCallId
-            });
-          }
-        }
-      };
-      
-      // Handle connection state
-      pc.onconnectionstatechange = () => {
-        const state = pc.connectionState;
-        console.log('🔄 Connection state changed:', state);
-        setConnectionStatus(state);
-        
-        if (state === 'connected') {
-          console.log('✅ WebRTC connection established');
-          addNotification('Video call connected!', 'success');
-          startStatsCollection();
-        } else if (state === 'disconnected' || state === 'failed') {
-          console.warn(`⚠️ WebRTC connection ${state}`);
-          addNotification(`Connection ${state}`, 'warning');
-          if (state === 'failed') {
-            attemptReconnect();
-          }
-        }
-      };
-      
-      // Handle ICE connection state
-      pc.oniceconnectionstatechange = () => {
-        console.log('🧊 ICE connection state:', pc.iceConnectionState);
-      };
-      
-      // If caller, create and send offer
-      if (caller) {
-        console.log('📤 Creating offer as caller');
-        
-        setTimeout(async () => {
-          try {
-            const offer = await pc.createOffer({
-              offerToReceiveAudio: true,
-              offerToReceiveVideo: true
-            });
-            
-            console.log('📝 Created offer:', offer.type);
-            
-            await pc.setLocalDescription(offer);
-            
-            const partnerId = partner.id || partner._id || partner.partnerId;
-            if (partnerId) {
-              sendWebRTCOffer({
-                to: partnerId,
-                sdp: offer,
-                callId: callId || videoCallId,
-                metadata: {
-                  username: userProfile?.username || 'Anonymous',
-                  videoEnabled: isVideoEnabled,
-                  audioEnabled: isAudioEnabled
-                }
-              });
-              console.log('📤 Sent WebRTC offer to partner:', partnerId);
-            }
-          } catch (error) {
-            console.error('❌ Error creating offer:', error);
-            initializationRef.current = false;
-          }
-        }, 1000);
-      } else {
-        console.log('📥 Waiting for offer as callee');
-      }
-      
-      setConnectionStatus('connecting');
-      console.log('✅ WebRTC connection initialized');
-      
     } catch (error) {
-      console.error('❌ Failed to initialize WebRTC:', error);
-      addNotification('Failed to start video call', 'error');
-      initializationRef.current = false;
+      console.error('❌ Screen share error:', error);
+      if (error.name !== 'NotAllowedError') {
+        addNotification('Failed to share screen', 'error');
+      }
     }
   };
+
+  const toggleFullscreen = () => {
+    const videoContainer = document.querySelector('.video-container');
+    if (!document.fullscreenElement) {
+      videoContainer?.requestFullscreen().then(() => {
+        setIsFullscreen(true);
+      }).catch(err => {
+        console.error('Fullscreen error:', err);
+      });
+    } else {
+      document.exitFullscreen().then(() => {
+        setIsFullscreen(false);
+      });
+    }
+  };
+
+  const handleDisconnect = () => {
+    console.log('📵 Disconnecting video call');
+    
+    // Send end call signal
+    if (socket && callInfo.partnerId && callInfo.callId) {
+      sendWebRTCEnd({
+        to: callInfo.partnerId,
+        reason: 'user_ended',
+        callId: callInfo.callId,
+        roomId: callInfo.roomId
+      });
+    }
+    
+    // Clean up
+    cleanup();
+    
+    // Navigate back
+    setCurrentScreen('home');
+    
+    // Call disconnect from context
+    if (disconnectPartner) {
+      disconnectPartner();
+    }
+    
+    addNotification('Video call ended', 'info');
+  };
+
+  const handleNext = () => {
+    console.log('⏭️ Switching to next partner');
+    handleDisconnect();
+    setTimeout(() => {
+      if (nextPartner) {
+        nextPartner();
+      }
+    }, 500);
+  };
+
+  const copyRoomLink = () => {
+    const link = `${window.location.origin}/video/${callInfo.roomId || callInfo.callId}`;
+    navigator.clipboard.writeText(link);
+    addNotification('Room link copied to clipboard', 'success');
+  };
+
+  const retryLocalStream = () => {
+    console.log('🔄 Retrying local stream initialization');
+    setRetryCount(prev => prev + 1);
+    
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => track.stop());
+      localStreamRef.current = null;
+    }
+    
+    setLocalStream(null);
+    setHasLocalStream(false);
+    
+    setTimeout(() => {
+      initializeLocalStream(true);
+    }, 500);
+  };
+
+  const cleanup = () => {
+    console.log('🧹 Cleaning up video call');
+    
+    // Reset refs
+    initializationRef.current = false;
+    videoMatchReadyRef.current = false;
+    streamRetryCountRef.current = 0;
+    reconnectAttemptsRef.current = 0;
+    
+    // Stop all media tracks
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => {
+        track.stop();
+      });
+      localStreamRef.current = null;
+    }
+    
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach(track => track.stop());
+      screenStreamRef.current = null;
+    }
+    
+    // Close peer connection
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
+    
+    // Clear refs
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = null;
+    }
+    
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = null;
+    }
+    
+    // Reset state
+    setLocalStream(null);
+    setRemoteStream(null);
+    setConnectionStatus('disconnected');
+    setIsScreenSharing(false);
+    setIsVideoEnabled(true);
+    setIsAudioEnabled(true);
+    setCallDuration(0);
+    setCallStats(null);
+    setHasLocalStream(false);
+    setCallInfo({
+      callId: null,
+      roomId: null,
+      isCaller: false,
+      partnerId: null,
+      initialized: false
+    });
+    setRetryCount(0);
+    setDeviceError(null);
+  };
+
   const monitorRemoteStream = (stream) => {
     const videoTrack = stream.getVideoTracks()[0];
     const audioTrack = stream.getAudioTracks()[0];
@@ -653,6 +971,7 @@ const VideoChatScreen = () => {
       };
     }
   };
+
   const startStatsCollection = () => {
     if (statsIntervalRef.current) {
       clearInterval(statsIntervalRef.current);
@@ -722,6 +1041,7 @@ const VideoChatScreen = () => {
       }
     }, 2000);
   };
+
   const attemptReconnect = () => {
     if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
       addNotification('Failed to reconnect after multiple attempts', 'error');
@@ -732,226 +1052,21 @@ const VideoChatScreen = () => {
     addNotification(`Reconnecting... (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})`, 'warning');
     
     setTimeout(() => {
-      if (partner && videoCallId) {
+      if (callInfo.callId && callInfo.roomId) {
         console.log('🔄 Attempting reconnect');
-        initializeWebRTCConnection(videoCallId, roomId, isCaller);
+        initializeWebRTCConnection();
       }
     }, 2000);
   };
-  // ==================== CONTROL FUNCTIONS ====================
-  const toggleVideo = () => {
-    if (localStreamRef.current) {
-      const videoTrack = localStreamRef.current.getVideoTracks()[0];
-      if (videoTrack) {
-        videoTrack.enabled = !videoTrack.enabled;
-        setIsVideoEnabled(videoTrack.enabled);
-        addNotification(videoTrack.enabled ? 'Video enabled' : 'Video disabled', 'info');
-      }
-    }
-  };
-  const toggleAudio = () => {
-    if (localStreamRef.current) {
-      const audioTrack = localStreamRef.current.getAudioTracks()[0];
-      if (audioTrack) {
-        audioTrack.enabled = !audioTrack.enabled;
-        setIsAudioEnabled(audioTrack.enabled);
-        addNotification(audioTrack.enabled ? 'Audio enabled' : 'Audio disabled', 'info');
-      }
-    }
-  };
-  const toggleScreenShare = async () => {
-    try {
-      if (!isScreenSharing) {
-        const screenStream = await navigator.mediaDevices.getDisplayMedia({
-          video: {
-            cursor: "always",
-            displaySurface: "monitor"
-          },
-          audio: false
-        });
-        
-        screenStreamRef.current = screenStream;
-        
-        // Replace video track in peer connection
-        const videoTrack = screenStream.getVideoTracks()[0];
-        const sender = peerConnectionRef.current?.getSenders()
-          .find(s => s.track?.kind === 'video');
-        
-        if (sender && videoTrack) {
-          sender.replaceTrack(videoTrack);
-          
-          // Update local video display
-          if (localVideoRef.current) {
-            localVideoRef.current.srcObject = screenStream;
-          }
-          
-          setIsScreenSharing(true);
-          addNotification('Screen sharing started', 'success');
-          
-          // Handle when user stops sharing via browser UI
-          videoTrack.onended = () => {
-            toggleScreenShare();
-          };
-        }
-      } else {
-        // Restore camera
-        const cameraStream = localStreamRef.current;
-        const cameraVideoTrack = cameraStream?.getVideoTracks()[0];
-        const sender = peerConnectionRef.current?.getSenders()
-          .find(s => s.track?.kind === 'video');
-        
-        if (sender && cameraVideoTrack) {
-          sender.replaceTrack(cameraVideoTrack);
-          
-          // Restore local video display
-          if (localVideoRef.current) {
-            localVideoRef.current.srcObject = cameraStream;
-          }
-          
-          // Stop screen stream
-          screenStreamRef.current?.getTracks().forEach(track => track.stop());
-          screenStreamRef.current = null;
-          
-          setIsScreenSharing(false);
-          addNotification('Screen sharing stopped', 'info');
-        }
-      }
-    } catch (error) {
-      console.error('❌ Screen share error:', error);
-      if (error.name !== 'NotAllowedError') {
-        addNotification('Failed to share screen', 'error');
-      }
-    }
-  };
-  const toggleFullscreen = () => {
-    const videoContainer = document.querySelector('.video-container');
-    if (!document.fullscreenElement) {
-      videoContainer?.requestFullscreen().then(() => {
-        setIsFullscreen(true);
-      }).catch(err => {
-        console.error('Fullscreen error:', err);
-      });
-    } else {
-      document.exitFullscreen().then(() => {
-        setIsFullscreen(false);
-      });
-    }
-  };
-  const handleDisconnect = () => {
-    console.log('📵 Disconnecting video call');
-    
-    // Send end call signal
-    if (socket && partner) {
-      const partnerId = partner.id || partner._id || partner.partnerId;
-      if (partnerId && videoCallId) {
-        sendWebRTCEnd({
-          to: partnerId,
-          reason: 'user_ended',
-          callId: videoCallId
-        });
-      }
-    }
-    
-    // Clean up
-    cleanup();
-    
-    // Navigate back
-    setCurrentScreen('home');
-    
-    // Call disconnect from context
-    if (disconnectPartner) {
-      disconnectPartner();
-    }
-    
-    addNotification('Video call ended', 'info');
-  };
-  const handleNext = () => {
-    console.log('⏭️ Switching to next partner');
-    handleDisconnect();
-    setTimeout(() => {
-      if (nextPartner) {
-        nextPartner();
-      }
-    }, 500);
-  };
-  const copyRoomLink = () => {
-    const link = `${window.location.origin}/video/${roomId || videoCallId}`;
-    navigator.clipboard.writeText(link);
-    addNotification('Room link copied to clipboard', 'success');
-  };
-  const retryLocalStream = () => {
-    console.log('🔄 Retrying local stream initialization');
-    setRetryCount(prev => prev + 1);
-    
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => track.stop());
-      localStreamRef.current = null;
-    }
-    
-    setLocalStream(null);
-    setHasLocalStream(false);
-    
-    setTimeout(() => {
-      initializeLocalStream();
-    }, 500);
-  };
-  const cleanup = () => {
-    console.log('🧹 Cleaning up video call');
-    
-    // Reset refs
-    initializationRef.current = false;
-    videoMatchReadyRef.current = false;
-    
-    // Stop all media tracks
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => {
-        track.stop();
-      });
-      localStreamRef.current = null;
-    }
-    
-    if (screenStreamRef.current) {
-      screenStreamRef.current.getTracks().forEach(track => track.stop());
-      screenStreamRef.current = null;
-    }
-    
-    // Close peer connection
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
-    }
-    
-    // Clear refs
-    if (localVideoRef.current) {
-      localVideoRef.current.srcObject = null;
-    }
-    
-    if (remoteVideoRef.current) {
-      remoteVideoRef.current.srcObject = null;
-    }
-    
-    // Reset state
-    setLocalStream(null);
-    setRemoteStream(null);
-    setConnectionStatus('disconnected');
-    setIsScreenSharing(false);
-    setIsVideoEnabled(true);
-    setIsAudioEnabled(true);
-    setCallDuration(0);
-    setCallStats(null);
-    setHasLocalStream(false);
-    setVideoCallId(null);
-    setRoomId(null);
-    setIsCaller(false);
-    reconnectAttemptsRef.current = 0;
-    setRetryCount(0);
-  };
-  // ==================== RENDER FUNCTIONS ====================
+
+  // ==================== RENDER HELPERS ====================
+
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
+
   const renderConnectionStatus = () => {
     const statusColors = {
       connecting: 'text-yellow-400',
@@ -985,78 +1100,32 @@ const VideoChatScreen = () => {
       </div>
     );
   };
-  const renderStats = () => {
-    if (!callStats || connectionStatus !== 'connected') return null;
-    
-    return (
-      <div className="absolute bottom-20 left-4 bg-black/80 backdrop-blur-sm text-xs p-3 rounded-xl z-30 border border-gray-700/50 max-w-xs">
-        <div className="font-bold mb-2 text-cyan-400">Call Stats</div>
-        <div className="space-y-1">
-          {callStats.rtt && (
-            <div>Latency: {callStats.rtt.toFixed(0)}ms</div>
-          )}
-          {callStats.video?.inbound?.framesPerSecond && (
-            <div>FPS: {callStats.video.inbound.framesPerSecond}</div>
-          )}
-          {callStats.video?.inbound?.frameWidth && (
-            <div>Resolution: {callStats.video.inbound.frameWidth}x{callStats.video.inbound.frameHeight}</div>
-          )}
-          {callStats.audio?.inbound?.packetsLost !== undefined && (
-            <div>Audio Loss: {callStats.audio.inbound.packetsLost} packets</div>
-          )}
-        </div>
-      </div>
-    );
-  };
-  const renderDebugInfo = () => {
-    if (process.env.NODE_ENV !== 'development') return null;
-    
-    const partnerId = partner?.id || partner?._id || partner?.partnerId;
-    
-    return (
-      <div className="absolute top-20 right-4 bg-black/80 backdrop-blur-sm text-xs p-3 rounded-xl z-30 border border-gray-700/50 max-w-xs">
-        <div className="font-bold mb-2 text-yellow-400">Debug Info</div>
-        <div className="space-y-1">
-          <div>Socket ID: {socket?.id?.substring(0, 8)}</div>
-          <div>Partner ID: {partnerId?.substring(0, 8) || 'None'}</div>
-          <div>Call ID: {videoCallId?.substring(0, 8) || 'None'}</div>
-          <div>Room ID: {roomId?.substring(0, 8) || 'None'}</div>
-          <div>Is Caller: {isCaller ? 'Yes' : 'No'}</div>
-          <div>Connection: {connectionStatus}</div>
-          <div>Local Stream: {hasLocalStream ? 'Ready' : 'Not Ready'}</div>
-          <div>Remote Stream: {remoteStream ? 'Active' : 'Inactive'}</div>
-          <div>Initialized: {initializationRef.current ? 'Yes' : 'No'}</div>
-        </div>
-      </div>
-    );
-  };
+
   const renderDeviceError = () => {
-    if (retryCount > 0 || !hasLocalStream) {
+    if (deviceError) {
       return (
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/80 backdrop-blur-sm p-6 rounded-xl border border-red-500/30 z-40">
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/80 backdrop-blur-sm p-6 rounded-xl border border-red-500/30 z-40 max-w-md">
           <div className="text-center">
             <FaExclamationTriangle className="text-red-500 text-4xl mx-auto mb-4" />
-            <h3 className="text-xl font-bold text-white mb-2">Camera/Microphone Issue</h3>
+            <h3 className="text-xl font-bold text-white mb-2">Device Error</h3>
             <p className="text-gray-300 mb-4">
-              {retryCount > 0
-                ? `Failed to access media devices (Attempt ${retryCount})`
-                : 'Unable to access camera or microphone'}
+              {deviceError}
             </p>
             <div className="space-y-3">
               <button
                 onClick={retryLocalStream}
                 className="w-full px-4 py-2 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-lg font-medium hover:opacity-90 transition-all duration-300"
               >
-                Retry
+                Retry Connection
               </button>
               <button
                 onClick={() => {
                   addNotification('Using placeholder video', 'info');
-                  setHasLocalStream(true);
+                  setDeviceError(null);
                 }}
                 className="w-full px-4 py-2 bg-gradient-to-r from-gray-800 to-gray-900 rounded-lg font-medium hover:opacity-90 transition-all duration-300 border border-gray-700"
               >
-                Continue with Placeholder
+                Continue Anyway
               </button>
             </div>
           </div>
@@ -1065,6 +1134,9 @@ const VideoChatScreen = () => {
     }
     return null;
   };
+
+  // ==================== RENDER ====================
+
   // If searching and no partner, show searching screen
   if (searching && !partner) {
     return (
@@ -1143,45 +1215,12 @@ const VideoChatScreen = () => {
             </div>
           </div>
         </div>
-        
-        {/* Settings Panel */}
-        {showSettings && (
-          <div className="absolute top-16 right-6 bg-gray-900/90 backdrop-blur-xl rounded-xl p-4 border border-gray-700/50 shadow-2xl w-64 z-50">
-            <div className="space-y-4">
-              <div>
-                <label className="flex items-center cursor-pointer">
-                  <div className="relative">
-                    <input
-                      type="checkbox"
-                      checked={autoConnect}
-                      onChange={toggleAutoConnect}
-                      className="sr-only"
-                    />
-                    <div className={`w-10 h-5 rounded-full transition-all duration-300 ${
-                      autoConnect ? 'bg-gradient-to-r from-green-500 to-emerald-500' : 'bg-gray-700'
-                    }`}></div>
-                    <div className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-300 ${
-                      autoConnect ? 'transform translate-x-5' : ''
-                    }`}></div>
-                  </div>
-                  <span className="ml-3 text-sm text-gray-300">Auto-reconnect</span>
-                </label>
-                <p className="text-xs text-gray-400 mt-1">
-                  Automatically search for next partner
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     );
   }
+
   return (
     <div className={`h-screen flex flex-col bg-gradient-to-br ${themes[activeTheme]} transition-all duration-500`}>
-      {/* Debug Info */}
-      {renderDebugInfo()}
-      {renderStats()}
-      
       {/* Device Error Overlay */}
       {renderDeviceError()}
       
@@ -1233,13 +1272,15 @@ const VideoChatScreen = () => {
             >
               <FaPalette className="group-hover:rotate-180 transition-transform" />
             </button>
-            <button
-              onClick={copyRoomLink}
-              className="p-2.5 hover:bg-gray-800/40 rounded-xl transition-all duration-300 backdrop-blur-sm group"
-              title="Copy Room Link"
-            >
-              <FaLink className="group-hover:scale-110 transition-transform" />
-            </button>
+            {callInfo.roomId && (
+              <button
+                onClick={copyRoomLink}
+                className="p-2.5 hover:bg-gray-800/40 rounded-xl transition-all duration-300 backdrop-blur-sm group"
+                title="Copy Room Link"
+              >
+                <FaLink className="group-hover:scale-110 transition-transform" />
+              </button>
+            )}
             <button
               onClick={() => setShowSettings(!showSettings)}
               className="p-2.5 hover:bg-gray-800/40 rounded-xl transition-all duration-300 backdrop-blur-sm group"
@@ -1433,6 +1474,9 @@ const VideoChatScreen = () => {
               onClick={() => {
                 const debugState = debugGetState?.();
                 console.log('Debug State:', debugState);
+                console.log('Call Info:', callInfo);
+                console.log('Local Stream:', localStreamRef.current);
+                console.log('Peer Connection:', peerConnectionRef.current);
                 addNotification('Debug info logged to console', 'info');
               }}
               className="px-4 py-2 bg-gradient-to-r from-gray-800/30 to-gray-900/30 hover:from-gray-700/30 hover:to-gray-800/30 rounded-lg text-sm transition-all duration-300 backdrop-blur-sm border border-gray-700/30"
@@ -1441,7 +1485,7 @@ const VideoChatScreen = () => {
               Debug
             </button>
             
-            {roomId && (
+            {callInfo.roomId && (
               <button
                 onClick={copyRoomLink}
                 className="px-4 py-2 bg-gradient-to-r from-blue-500/20 to-cyan-500/20 hover:from-blue-500/30 hover:to-cyan-500/30 rounded-lg text-sm transition-all duration-300 backdrop-blur-sm border border-blue-500/30"
@@ -1514,22 +1558,6 @@ const VideoChatScreen = () => {
                       <span className="text-xs text-gray-400">{formatTime(callDuration)}</span>
                     </div>
                   </div>
-                  
-                  {partner.profile?.interests?.length > 0 && (
-                    <div>
-                      <div className="text-xs text-gray-400 mb-1">Interests</div>
-                      <div className="flex flex-wrap gap-1">
-                        {partner.profile.interests.slice(0, 3).map((interest, idx) => (
-                          <span
-                            key={idx}
-                            className="px-2 py-1 bg-gray-800/50 text-gray-300 rounded text-xs backdrop-blur-sm"
-                          >
-                            {interest}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
             )}
@@ -1560,53 +1588,6 @@ const VideoChatScreen = () => {
           </div>
         </div>
       )}
-      
-      {/* CSS Animations */}
-      <style jsx>{`
-        @keyframes float {
-          0%, 100% { transform: translateY(0px) rotate(0deg); }
-          50% { transform: translateY(-20px) rotate(180deg); }
-        }
-        
-        @keyframes gradient {
-          0%, 100% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-        }
-        
-        .animate-float {
-          animation: float 20s ease-in-out infinite;
-        }
-        
-        .animate-gradient {
-          background-size: 200% 200%;
-          animation: gradient 3s ease infinite;
-        }
-        
-        .animate-fadeIn {
-          animation: fadeIn 0.3s ease-out;
-        }
-        
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-            transform: translateY(10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-        
-        /* Custom video controls */
-        video::-webkit-media-controls {
-          display: none !important;
-        }
-        
-        video {
-          -webkit-transform: scaleX(1); /* Fix for flipped video in some browsers */
-          transform: scaleX(1);
-        }
-      `}</style>
     </div>
   );
 };
