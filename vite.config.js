@@ -12,8 +12,8 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/socket.io': {
-        target: 'https://randomchat-lfo7.onrender.com',
-          //target: 'http://localhost:5000',
+       // target: 'https://randomchat-lfo7.onrender.com',
+          target: 'http://localhost:5000',
         ws: true
       }
     }
