@@ -84,7 +84,8 @@ const VideoChatScreen = () => {
   const retryTimeoutRef = useRef(null);
   const streamRetryCountRef = useRef(0);
   const maxStreamRetries = 3;
-
+// Add this ref
+const lastConnectionStateRef = useRef({});
 
   // Add these refs at the top with other refs
 const queuedIceCandidatesRef = useRef([]);
@@ -133,6 +134,48 @@ useEffect(() => {
   }
 }, [peerConnectionRef.current?.remoteDescription, processQueuedIceCandidates]);
   
+
+
+// Add this useEffect to monitor connection state
+useEffect(() => {
+  const monitorInterval = setInterval(() => {
+    if (peerConnectionRef.current) {
+      const pc = peerConnectionRef.current;
+      const state = {
+        signalingState: pc.signalingState,
+        connectionState: pc.connectionState,
+        iceConnectionState: pc.iceConnectionState,
+        iceGatheringState: pc.iceGatheringState,
+        localDescription: pc.localDescription?.type,
+        remoteDescription: pc.remoteDescription?.type,
+        senders: pc.getSenders().length,
+        receivers: pc.getReceivers().length,
+        transceivers: pc.getTransceivers().length
+      };
+      
+      // Only log if something changed
+      if (JSON.stringify(state) !== JSON.stringify(lastConnectionStateRef.current)) {
+        console.log('📡 Connection state update:', state);
+        lastConnectionStateRef.current = state;
+        
+        // Auto-correct role based on actual state
+        if (state.signalingState === 'stable') {
+          if (state.localDescription === 'offer' && !callInfo.isCaller) {
+            console.log('🔄 Auto-correcting: We are caller (have local offer)');
+            setCallInfo(prev => ({ ...prev, isCaller: true }));
+          } else if (state.localDescription === 'answer' && callInfo.isCaller) {
+            console.log('🔄 Auto-correcting: We are callee (have local answer)');
+            setCallInfo(prev => ({ ...prev, isCaller: false }));
+          }
+        }
+      }
+    }
+  }, 2000); // Check every 2 seconds
+  
+  return () => clearInterval(monitorInterval);
+}, [callInfo.isCaller]);
+
+
   const themes = {
     midnight: 'from-gray-900 to-black',
     ocean: 'from-blue-900/30 to-teal-900/30',
@@ -1264,7 +1307,6 @@ const handleVideoMatchReady = useCallback((data) => {
   
   videoMatchReadyRef.current = true;
   
-  // Extract partner ID from various possible locations
   const partnerId = data.partnerId || 
                    (partner?.id || partner?._id || partner?.partnerId);
   
@@ -1273,25 +1315,22 @@ const handleVideoMatchReady = useCallback((data) => {
     return;
   }
   
-  // FIXED: Determine if we're the caller based on who initiated the video chat
-  // The user who clicked "Video Chat" should be the caller
   const currentSocketId = socket?.id;
   
-  // CRITICAL FIX: Use timestamp to determine caller, not socket ID comparison
-  // The earlier user (based on match time) should be caller
+  // FIXED: Better role determination
+  // Use a combination of socket ID and match time
   const matchTime = data.timestamp || Date.now();
-  const isCaller = currentSocketId && partnerId && 
-                   (currentSocketId < partnerId); // Keep original logic for now
   
-  // Alternative: First user to join the room is caller
-  // const isCaller = !data.isReconnecting; // Or based on some other logic
+  // Simple deterministic rule: Lower socket ID is caller
+  // But also consider if we initiated the video chat
+  const isCaller = currentSocketId && partnerId && 
+                   (currentSocketId < partnerId);
   
   console.log('📞 Determining caller role:', {
     currentSocketId: currentSocketId?.substring(0, 8),
     partnerId: partnerId?.substring(0, 8),
     isCaller,
-    comparison: currentSocketId && partnerId ? 
-      `${currentSocketId} < ${partnerId} = ${currentSocketId < partnerId}` : 'N/A'
+    rule: 'lower socket ID is caller'
   });
   
   // Update call info
@@ -1303,12 +1342,11 @@ const handleVideoMatchReady = useCallback((data) => {
     initialized: false
   });
   
-  console.log('📞 Video call info updated:', {
+  console.log('📞 Video call info set:', {
     callId: data.callId,
     roomId: data.roomId,
     isCaller,
-    partnerId,
-    socketId: currentSocketId?.substring(0, 8)
+    partnerId: partnerId?.substring(0, 8)
   });
   
   // Update partner if needed
@@ -1323,7 +1361,6 @@ const handleVideoMatchReady = useCallback((data) => {
   
   addNotification('Video call is ready!', 'success');
 }, [socket, partner, debugForcePartnerUpdate, addNotification]);
-
 
 
 
@@ -1455,57 +1492,103 @@ const handleWebRTCAnswer = useCallback(async (data) => {
   
   // Get current signaling state
   const signalingState = pc.signalingState;
-  const hasLocalOffer = pc.localDescription?.type === 'offer';
-  const hasRemoteOffer = pc.remoteDescription?.type === 'offer';
+  const localDescType = pc.localDescription?.type;
+  const remoteDescType = pc.remoteDescription?.type;
   
-  console.log('📊 Current signaling state:', {
+  console.log('📊 Current connection state:', {
     signalingState,
-    localDescription: pc.localDescription?.type,
-    remoteDescription: pc.remoteDescription?.type,
+    localDescription: localDescType,
+    remoteDescription: remoteDescType,
     isCaller: callInfo.isCaller,
-    hasLocalOffer,
-    hasRemoteOffer
+    connectionState: pc.connectionState,
+    iceConnectionState: pc.iceConnectionState
   });
   
-  // CRITICAL FIX: Determine if we should handle this answer based on ACTUAL STATE
-  // not just isCaller flag
+  // CRITICAL FIX: Check if we're already connected
+  if (signalingState === 'stable' && remoteDescType === 'answer') {
+    console.log('ℹ️ Already connected (stable with answer), ignoring duplicate answer');
+    
+    // Just update our role if it's wrong
+    if (localDescType === 'offer' && !callInfo.isCaller) {
+      console.log('🔄 Correcting role: we are caller (we sent offer)');
+      setCallInfo(prev => ({ ...prev, isCaller: true }));
+    }
+    
+    // Check if we have media flowing
+    setTimeout(() => {
+      const receivers = pc.getReceivers();
+      console.log('📊 Current receivers:', receivers.length);
+      receivers.forEach((rec, idx) => {
+        if (rec.track) {
+          console.log(`  Receiver ${idx}: ${rec.track.kind} - ${rec.track.readyState}`);
+        }
+      });
+    }, 500);
+    
+    return; // Don't process further
+  }
   
-  // Case 1: We have a local offer (we sent an offer) - we're the CALLER
-  if (hasLocalOffer && !hasRemoteOffer) {
-    console.log('🎯 We sent an offer (CALLER), handling answer from callee...');
+  // Handle based on actual state, not just isCaller flag
+  if (signalingState === 'have-local-offer') {
+    // We sent an offer, waiting for answer - we're the CALLER
+    console.log('🎯 We are CALLER (have-local-offer), processing answer...');
+    
+    // Update role if needed
+    if (!callInfo.isCaller) {
+      console.log('🔄 Setting isCaller = true');
+      setCallInfo(prev => ({ ...prev, isCaller: true }));
+    }
     
     try {
-      // Set our role correctly
-      if (!callInfo.isCaller) {
-        console.log('🔄 Correcting role: setting isCaller = true');
-        setCallInfo(prev => ({ ...prev, isCaller: true }));
-      }
-      
-      // Set remote description (answer)
       await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
       console.log('✅ Remote description (answer) set');
       
       setConnectionStatus('connected');
       addNotification('Video call connected!', 'success');
       
-      // Debug: Check receivers
+      // Debug media tracks
       setTimeout(() => {
         const receivers = pc.getReceivers();
         console.log('📊 Active receivers after answer:', receivers.length);
-      }, 500);
+        
+        if (receivers.length === 0) {
+          console.warn('⚠️ No receivers! Check ontrack event');
+        }
+      }, 1000);
       
     } catch (error) {
       console.error('❌ Error setting remote description:', error);
+      
+      // If already in stable state, just update role
+      if (error.message.includes('wrong state: stable')) {
+        console.log('ℹ️ Already stable, just updating role');
+        if (!callInfo.isCaller) {
+          setCallInfo(prev => ({ ...prev, isCaller: true }));
+        }
+      }
     }
     
-  } 
-  // Case 2: We have a remote offer (we received an offer) - we're the CALLEE
-  else if (hasRemoteOffer && !hasLocalOffer) {
-    console.log('❌ We received an offer (CALLEE) but got an answer - ignoring');
-    console.log('ℹ️ As callee, we should send answers, not receive them');
+  } else if (signalingState === 'stable' && localDescType === 'offer') {
+    // We're in stable state but think we're callee - fix role
+    console.log('🔄 Stable with local offer - we are actually CALLER');
+    setCallInfo(prev => ({ ...prev, isCaller: true }));
     
-    // We might need to send our answer again
-    if (pc.localDescription?.type === 'answer') {
+    // Check if we need to update remote description
+    if (!remoteDescType || remoteDescType !== 'answer') {
+      try {
+        await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+        console.log('✅ Updated to answer in stable state');
+      } catch (error) {
+        console.warn('⚠️ Could not update remote description:', error.message);
+      }
+    }
+    
+  } else if (signalingState === 'have-remote-offer') {
+    // We received an offer - we're CALLEE, shouldn't get answers
+    console.warn('❌ CALLEE received answer - ignoring');
+    
+    // We should send our answer again if we have one
+    if (localDescType === 'answer') {
       console.log('🔄 Re-sending our answer...');
       sendWebRTCAnswer({
         to: data.from,
@@ -1515,65 +1598,37 @@ const handleWebRTCAnswer = useCallback(async (data) => {
       });
     }
     
-  } 
-  // Case 3: Race condition - both have offers (GLARE condition)
-  else if (hasLocalOffer && hasRemoteOffer) {
-    console.warn('⚠️ GLARE CONDITION: Both users sent offers!');
-    console.log('🔄 Resolving glare: We will be callee, rollback our offer');
+  } else {
+    // Other states
+    console.log(`ℹ️ Answer received in ${signalingState} state, trying to handle...`);
     
-    // Rollback: We'll be the callee
-    try {
-      // Set remote description (the other user's offer)
-      await pc.setRemoteDescription(pc.remoteDescription || new RTCSessionDescription(data.sdp));
-      
-      // Create and send answer
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      
-      sendWebRTCAnswer({
-        to: data.from,
-        sdp: answer,
-        callId: data.callId || callInfo.callId,
-        roomId: data.roomId || callInfo.roomId
-      });
-      
-      console.log('📤 Sent answer after glare resolution');
-      setCallInfo(prev => ({ ...prev, isCaller: false }));
-      
-    } catch (error) {
-      console.error('❌ Error resolving glare condition:', error);
-    }
-    
-  }
-  // Case 4: Stable state - answer might be duplicate
-  else if (signalingState === 'stable') {
-    console.log('ℹ️ Already in stable state, answer might be duplicate');
-    
-    // Check if we need to update remote description
-    if (!pc.remoteDescription || pc.remoteDescription.type !== 'answer') {
-      try {
-        await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-        console.log('✅ Updated to answer in stable state');
-      } catch (error) {
-        console.warn('⚠️ Could not update remote description:', error.message);
-      }
-    }
-    
-  }
-  // Case 5: Unknown state
-  else {
-    console.warn(`⚠️ Unknown state for answer handling: ${signalingState}`);
-    
-    // Try to handle anyway
     try {
       await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-      console.log('✅ Set remote description in unknown state');
+      console.log('✅ Remote description set');
+      
+      // If we successfully set answer, we must be caller
+      if (!callInfo.isCaller) {
+        console.log('🔄 Updating role to caller');
+        setCallInfo(prev => ({ ...prev, isCaller: true }));
+      }
+      
     } catch (error) {
-      console.error('❌ Failed to set remote description:', error);
+      console.warn('⚠️ Could not set remote description:', error.message);
     }
   }
-}, [callInfo, sendWebRTCAnswer]);
-
+  
+  // Log final state
+  setTimeout(() => {
+    console.log('📊 Final state after answer processing:', {
+      signalingState: pc.signalingState,
+      connectionState: pc.connectionState,
+      iceConnectionState: pc.iceConnectionState,
+      localDescription: pc.localDescription?.type,
+      remoteDescription: pc.remoteDescription?.type,
+      isCaller: callInfo.isCaller
+    });
+  }, 1000);
+}, [callInfo, sendWebRTCAnswer, addNotification]);
 const handleWebRTCIceCandidate = useCallback(async (data) => {
   console.log('🧊 Received ICE candidate:', {
     from: data.from,
