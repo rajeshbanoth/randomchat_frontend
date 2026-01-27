@@ -39,6 +39,7 @@ const VideoChatScreen = () => {
   const localStreamRef = useRef(null);
   const screenStreamRef = useRef(null);
   const remoteStreamRef = useRef(null);
+  const offerTimeoutRefs = useRef([]);
   
   // State
   const [localStream, setLocalStream] = useState(null);
@@ -261,6 +262,51 @@ useEffect(() => {
     }
   };
 
+
+  const resolveGlareCondition = async (theirSocketId) => {
+  console.log('🔄 Resolving glare condition with:', theirSocketId?.substring(0, 8));
+  
+  const pc = peerConnectionRef.current;
+  const ourSocketId = socket?.id;
+  
+  if (!pc || !ourSocketId || !theirSocketId) {
+    console.error('❌ Cannot resolve glare: missing info');
+    return false;
+  }
+  
+  // Simple rule: Lower socket ID becomes caller
+  const weShouldBeCaller = ourSocketId < theirSocketId;
+  
+  console.log('📊 Glare resolution:', {
+    ourSocketId: ourSocketId.substring(0, 8),
+    theirSocketId: theirSocketId.substring(0, 8),
+    weShouldBeCaller,
+    rule: 'lower socket ID wins'
+  });
+  
+  if (weShouldBeCaller) {
+    console.log('🎯 We become caller');
+    setCallInfo(prev => ({ ...prev, isCaller: true }));
+    
+    // Ensure we have an offer
+    if (!pc.localDescription || pc.localDescription.type !== 'offer') {
+      await createAndSendOffer();
+    }
+    
+    return true; // We're caller
+  } else {
+    console.log('🎯 We become callee');
+    setCallInfo(prev => ({ ...prev, isCaller: false }));
+    
+    // Clear any local offer
+    if (pc.localDescription?.type === 'offer') {
+      await pc.setLocalDescription(null);
+      console.log('🛑 Cleared our offer');
+    }
+    
+    return false; // We're callee
+  }
+};
 const initializeLocalStream = async (forceRetry = false) => {
   if (isInitializing && !forceRetry) {
     console.log('⏳ Already initializing local stream');
@@ -964,23 +1010,183 @@ const initializeWebRTCConnection = useCallback(async () => {
       }
     });
     
-    // Log final state
+    // Log initial transceiver state
     setTimeout(() => {
-      console.log('📊 Final peer connection state after initialization:');
       const transceivers = pc.getTransceivers();
-      console.log(`Transceivers: ${transceivers.length}`);
+      console.log('📊 Initial transceiver state:', transceivers.length);
       
       transceivers.forEach((tc, idx) => {
         console.log(`  Transceiver ${idx}:`, {
-          kind: tc.receiver.track?.kind || tc.sender.track?.kind,
+          mid: tc.mid,
           direction: tc.direction,
           currentDirection: tc.currentDirection,
-          hasReceiverTrack: !!tc.receiver.track,
-          hasSenderTrack: !!tc.sender.track
+          receiverTrack: tc.receiver.track?.kind || 'none',
+          senderTrack: tc.sender.track?.kind || 'none',
+          receiverEnabled: tc.receiver.track?.enabled,
+          senderEnabled: tc.sender.track?.enabled
         });
       });
+    }, 100);
+    
+    // CRITICAL: Add delay based on role to prevent race conditions
+    if (callInfo.isCaller) {
+      console.log('⏳ CALLER: Adding delay before sending offer to prevent race conditions...');
       
-      console.log('✅ WebRTC connection initialized successfully');
+      // Random delay between 1-2 seconds to prevent simultaneous offers
+      const baseDelay = 1000; // 1 second base
+      const randomDelay = Math.random() * 1000; // 0-1 second random
+      const totalDelay = baseDelay + randomDelay;
+      
+      console.log(`⏳ Caller delay: ${Math.round(totalDelay)}ms (${Math.round(baseDelay)}ms base + ${Math.round(randomDelay)}ms random)`);
+      
+      // Store timeout reference for cleanup
+      const offerTimeoutRef = setTimeout(async () => {
+        console.log('⏰ Caller delay complete, checking state...');
+        
+        // Check if still valid
+        if (!peerConnectionRef.current || !callInfo.isCaller || !socket?.connected) {
+          console.warn('⚠️ Cannot send offer: connection not ready');
+          return;
+        }
+        
+        // Check if we already have a local offer
+        if (pc.localDescription && pc.localDescription.type === 'offer') {
+          console.log('ℹ️ Already have local offer, re-sending...');
+          sendWebRTCOffer({
+            to: callInfo.partnerId,
+            sdp: pc.localDescription,
+            callId: callInfo.callId,
+            roomId: callInfo.roomId,
+            metadata: {
+              username: userProfile?.username || 'Anonymous',
+              videoEnabled: isVideoEnabled,
+              audioEnabled: isAudioEnabled
+            }
+          });
+          return;
+        }
+        
+        // Check if we already have a remote offer (race condition)
+        if (pc.remoteDescription && pc.remoteDescription.type === 'offer') {
+          console.warn('⚠️ Race condition: We have remote offer, becoming callee');
+          setCallInfo(prev => ({ ...prev, isCaller: false }));
+          
+          // Create and send answer
+          try {
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            
+            sendWebRTCAnswer({
+              to: callInfo.partnerId,
+              sdp: answer,
+              callId: callInfo.callId,
+              roomId: callInfo.roomId
+            });
+            
+            console.log('📤 Sent answer after race detection');
+            return;
+          } catch (error) {
+            console.error('❌ Failed to create answer:', error);
+          }
+        }
+        
+        // Normal flow: Create and send offer
+        console.log('📤 Creating and sending initial offer...');
+        try {
+          const offer = await pc.createOffer({
+            offerToReceiveAudio: true,
+            offerToReceiveVideo: true,
+            iceRestart: false
+          });
+          
+          await pc.setLocalDescription(offer);
+          console.log('✅ Local description (offer) set');
+          
+          sendWebRTCOffer({
+            to: callInfo.partnerId,
+            sdp: offer,
+            callId: callInfo.callId,
+            roomId: callInfo.roomId,
+            metadata: {
+              username: userProfile?.username || 'Anonymous',
+              videoEnabled: isVideoEnabled,
+              audioEnabled: isAudioEnabled
+            }
+          });
+          
+          console.log('📤 Initial offer sent to partner');
+          
+        } catch (error) {
+          console.error('❌ Failed to create/send offer:', error);
+          
+          // Retry once after delay
+          setTimeout(async () => {
+            if (peerConnectionRef.current === pc) {
+              console.log('🔄 Retrying offer creation...');
+              try {
+                const retryOffer = await pc.createOffer();
+                await pc.setLocalDescription(retryOffer);
+                
+                sendWebRTCOffer({
+                  to: callInfo.partnerId,
+                  sdp: retryOffer,
+                  callId: callInfo.callId,
+                  roomId: callInfo.roomId,
+                  metadata: {
+                    username: userProfile?.username || 'Anonymous',
+                    videoEnabled: isVideoEnabled,
+                    audioEnabled: isAudioEnabled
+                  }
+                });
+                
+                console.log('📤 Retry offer sent');
+              } catch (retryError) {
+                console.error('❌ Retry also failed:', retryError);
+              }
+            }
+          }, 1000);
+        }
+        
+      }, totalDelay);
+      
+      // Store timeout for cleanup
+      offerTimeoutRefs.current.push(offerTimeoutRef);
+      
+    } else {
+      // CALLEE: Just wait for offer
+      console.log('📥 CALLEE: Waiting for offer from caller...');
+      console.log('ℹ️ Callee will respond when offer is received');
+      
+      // Set a timeout to check if offer never arrives
+      const offerWaitTimeout = setTimeout(() => {
+        console.log('⏰ Callee waiting timeout (10s), checking state...');
+        
+        if (!pc.remoteDescription && connectionStatus === 'connecting') {
+          console.warn('⚠️ No offer received after 10 seconds');
+          console.log('🔄 Callee may become caller...');
+          
+          // Check if partner is still connected
+          if (socket?.connected) {
+            // Ask partner to send offer
+            console.log('📨 Asking partner to send offer...');
+            // You could emit a custom event here to ask partner to send offer
+          }
+        }
+      }, 10000); // 10 second timeout
+      
+      offerTimeoutRefs.current.push(offerWaitTimeout);
+    }
+    
+    // Log final state after a moment
+    setTimeout(() => {
+      console.log('✅ WebRTC connection initialization sequence started');
+      console.log('📊 Initial connection state:', {
+        signalingState: pc.signalingState,
+        iceConnectionState: pc.iceConnectionState,
+        connectionState: pc.connectionState,
+        localDescription: pc.localDescription?.type || 'none',
+        remoteDescription: pc.remoteDescription?.type || 'none'
+      });
     }, 500);
     
   } catch (error) {
@@ -988,9 +1194,30 @@ const initializeWebRTCConnection = useCallback(async () => {
     addNotification('Failed to start video call', 'error');
     initializationRef.current = false;
     setConnectionStatus('failed');
+    
+    // Attempt recovery
+    if (reconnectAttemptsRef.current < maxReconnectAttempts) {
+      console.log(`🔄 Attempting recovery (${reconnectAttemptsRef.current + 1}/${maxReconnectAttempts})...`);
+      setTimeout(() => {
+        initializeWebRTCConnection();
+      }, 2000);
+    }
   }
-}, [partner, callInfo, iceServers, createPeerConnection, fetchIceServers, addNotification]);
-
+}, [
+  partner, 
+  callInfo, 
+  iceServers, 
+  createPeerConnection, 
+  fetchIceServers, 
+  sendWebRTCOffer, 
+  sendWebRTCAnswer, 
+  userProfile, 
+  isVideoEnabled, 
+  isAudioEnabled, 
+  addNotification, 
+  socket, 
+  connectionStatus
+]);
 
 
   const createAndSendOffer = async (pc = peerConnectionRef.current) => {
@@ -1027,59 +1254,78 @@ const initializeWebRTCConnection = useCallback(async () => {
 
   // ==================== EVENT HANDLERS ====================
 
-  const handleVideoMatchReady = useCallback((data) => {
-    console.log('🎯 Video match ready event received:', data);
-    
-    if (videoMatchReadyRef.current) {
-      console.log('⚠️ Already processed video match');
-      return;
-    }
-    
-    videoMatchReadyRef.current = true;
-    
-    // Extract partner ID from various possible locations
-    const partnerId = data.partnerId || 
-                     (partner?.id || partner?._id || partner?.partnerId);
-    
-    if (!partnerId) {
-      console.error('❌ No partner ID in video match data');
-      return;
-    }
-    
-    // Determine if we're the caller
-    const currentSocketId = socket?.id;
-    const isCaller = currentSocketId && partnerId && 
-                    (currentSocketId < partnerId);
-    
-    // Update call info
-    setCallInfo({
-      callId: data.callId,
+const handleVideoMatchReady = useCallback((data) => {
+  console.log('🎯 Video match ready event received:', data);
+  
+  if (videoMatchReadyRef.current) {
+    console.log('⚠️ Already processed video match');
+    return;
+  }
+  
+  videoMatchReadyRef.current = true;
+  
+  // Extract partner ID from various possible locations
+  const partnerId = data.partnerId || 
+                   (partner?.id || partner?._id || partner?.partnerId);
+  
+  if (!partnerId) {
+    console.error('❌ No partner ID in video match data');
+    return;
+  }
+  
+  // FIXED: Determine if we're the caller based on who initiated the video chat
+  // The user who clicked "Video Chat" should be the caller
+  const currentSocketId = socket?.id;
+  
+  // CRITICAL FIX: Use timestamp to determine caller, not socket ID comparison
+  // The earlier user (based on match time) should be caller
+  const matchTime = data.timestamp || Date.now();
+  const isCaller = currentSocketId && partnerId && 
+                   (currentSocketId < partnerId); // Keep original logic for now
+  
+  // Alternative: First user to join the room is caller
+  // const isCaller = !data.isReconnecting; // Or based on some other logic
+  
+  console.log('📞 Determining caller role:', {
+    currentSocketId: currentSocketId?.substring(0, 8),
+    partnerId: partnerId?.substring(0, 8),
+    isCaller,
+    comparison: currentSocketId && partnerId ? 
+      `${currentSocketId} < ${partnerId} = ${currentSocketId < partnerId}` : 'N/A'
+  });
+  
+  // Update call info
+  setCallInfo({
+    callId: data.callId,
+    roomId: data.roomId,
+    isCaller,
+    partnerId,
+    initialized: false
+  });
+  
+  console.log('📞 Video call info updated:', {
+    callId: data.callId,
+    roomId: data.roomId,
+    isCaller,
+    partnerId,
+    socketId: currentSocketId?.substring(0, 8)
+  });
+  
+  // Update partner if needed
+  if (partner && debugForcePartnerUpdate) {
+    debugForcePartnerUpdate({
+      ...partner,
+      videoCallId: data.callId,
       roomId: data.roomId,
-      isCaller,
-      partnerId,
-      initialized: false
+      partnerProfile: data.partnerProfile
     });
-    
-    console.log('📞 Video call info updated:', {
-      callId: data.callId,
-      roomId: data.roomId,
-      isCaller,
-      partnerId,
-      socketId: currentSocketId
-    });
-    
-    // Update partner if needed
-    if (partner && debugForcePartnerUpdate) {
-      debugForcePartnerUpdate({
-        ...partner,
-        videoCallId: data.callId,
-        roomId: data.roomId,
-        partnerProfile: data.partnerProfile
-      });
-    }
-    
-    addNotification('Video call is ready!', 'success');
-  }, [socket, partner, debugForcePartnerUpdate, addNotification]);
+  }
+  
+  addNotification('Video call is ready!', 'success');
+}, [socket, partner, debugForcePartnerUpdate, addNotification]);
+
+
+
 
 const handleWebRTCOffer = useCallback(async (data) => {
   console.log('📞 Received WebRTC offer:', {
@@ -1089,8 +1335,62 @@ const handleWebRTCOffer = useCallback(async (data) => {
     sdpType: data.sdp?.type
   });
   
-  // Only handle if we're the callee (not the caller)
-  if (!callInfo.isCaller && data.sdp) {
+  const pc = peerConnectionRef.current;
+  
+  if (!pc || !data.sdp) {
+    console.warn('⚠️ No peer connection or SDP, ignoring offer');
+    return;
+  }
+  
+  const signalingState = pc.signalingState;
+  const hasLocalOffer = pc.localDescription?.type === 'offer';
+  
+  console.log('📊 Current state before handling offer:', {
+    signalingState,
+    hasLocalOffer,
+    localDescription: pc.localDescription?.type
+  });
+  
+  // CRITICAL: Check if we already sent an offer (GLARE condition)
+  if (hasLocalOffer) {
+    console.warn('⚠️ GLARE: We already sent an offer, but received another offer');
+    console.log('🔄 Comparing offer timestamps to decide who wins...');
+    
+    // Simple resolution: Lower socket ID becomes caller
+    const ourSocketId = socket?.id;
+    const theirSocketId = data.from;
+    const weShouldBeCaller = ourSocketId && theirSocketId && ourSocketId < theirSocketId;
+    
+    if (weShouldBeCaller) {
+      console.log('🎯 We win glare (lower socket ID), ignoring their offer');
+      console.log('📤 Re-sending our offer...');
+      
+      // Re-send our offer
+      if (pc.localDescription) {
+        sendWebRTCOffer({
+          to: data.from,
+          sdp: pc.localDescription,
+          callId: data.callId || callInfo.callId,
+          roomId: data.roomId || callInfo.roomId,
+          metadata: {
+            username: userProfile?.username || 'Anonymous',
+            videoEnabled: isVideoEnabled,
+            audioEnabled: isAudioEnabled
+          }
+        });
+      }
+      return;
+    } else {
+      console.log('🎯 They win glare, we become callee');
+      console.log('🔄 Rolling back our offer...');
+      
+      // Rollback: Clear local description, become callee
+      await pc.setLocalDescription(null);
+    }
+  }
+  
+  // Normal offer handling
+  try {
     console.log('🎯 Handling offer as callee...');
     
     // Update call info
@@ -1099,196 +1399,35 @@ const handleWebRTCOffer = useCallback(async (data) => {
       callId: data.callId || prev.callId,
       partnerId: data.from || prev.partnerId,
       roomId: data.roomId || prev.roomId,
-      isCaller: false
+      isCaller: false // We're callee when receiving offer
     }));
     
-    if (!peerConnectionRef.current) {
-      console.warn('⚠️ No peer connection, creating one...');
-      
-      // Create peer connection if it doesn't exist
-      const servers = iceServers.length > 0 ? iceServers : await fetchIceServers();
-      const pc = createPeerConnection(servers);
-      
-      // Add local tracks
-      if (localStreamRef.current) {
-        const tracks = localStreamRef.current.getTracks();
-        tracks.forEach(track => {
-          pc.addTrack(track, localStreamRef.current);
-        });
-      }
-    }
+    // Set remote description
+    await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+    console.log('✅ Remote description (offer) set');
     
-    if (peerConnectionRef.current) {
-      try {
-        const pc = peerConnectionRef.current;
-        const signalingState = pc.signalingState;
-        
-        console.log('📊 Current signaling state:', signalingState);
-        
-        // Check if we can process this offer
-        if (signalingState === 'stable' || signalingState === 'have-local-offer') {
-          console.log(`✅ Can process offer in ${signalingState} state`);
-          
-          // Set remote description
-          console.log('📝 Setting remote description...');
-          await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-          console.log('✅ Remote description set');
-          
-          // Check if we already have a local description
-          if (pc.localDescription) {
-            console.log('ℹ️ Local description already exists:', pc.localDescription.type);
-            
-            // If we already have an answer, just send it again
-            if (pc.localDescription.type === 'answer') {
-              console.log('🔄 Re-sending existing answer...');
-              sendWebRTCAnswer({
-                to: data.from,
-                sdp: pc.localDescription,
-                callId: data.callId || callInfo.callId,
-                roomId: data.roomId || callInfo.roomId
-              });
-              console.log('📤 Answer re-sent');
-              return;
-            }
-          }
-          
-          // Create and set local description
-          console.log('📝 Creating answer...');
-          const answer = await pc.createAnswer({
-            offerToReceiveAudio: true,
-            offerToReceiveVideo: true
-          });
-          
-          console.log('📝 Setting local description...');
-          await pc.setLocalDescription(answer);
-          console.log('✅ Local description set');
-          
-          // Send answer
-          sendWebRTCAnswer({
-            to: data.from,
-            sdp: answer,
-            callId: data.callId || callInfo.callId,
-            roomId: data.roomId || callInfo.roomId
-          });
-          
-          console.log('📤 WebRTC answer sent to caller');
-          
-        } else if (signalingState === 'have-remote-offer') {
-          console.log('ℹ️ Already have remote offer, creating new answer...');
-          
-          // We already have a remote offer, create new answer
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          
-          sendWebRTCAnswer({
-            to: data.from,
-            sdp: answer,
-            callId: data.callId || callInfo.callId,
-            roomId: data.roomId || callInfo.roomId
-          });
-          
-          console.log('📤 Sent updated answer');
-          
-        } else {
-          console.warn(`⚠️ Cannot process offer in ${signalingState} state`);
-          
-          // Try to rollback and create new connection
-          console.log('🔄 Creating new peer connection...');
-          pc.close();
-          
-          const servers = iceServers.length > 0 ? iceServers : await fetchIceServers();
-          const newPc = createPeerConnection(servers);
-          
-          // Add local tracks
-          if (localStreamRef.current) {
-            localStreamRef.current.getTracks().forEach(track => {
-              newPc.addTrack(track, localStreamRef.current);
-            });
-          }
-          
-          // Set remote description and create answer
-          await newPc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-          const answer = await newPc.createAnswer();
-          await newPc.setLocalDescription(answer);
-          
-          sendWebRTCAnswer({
-            to: data.from,
-            sdp: answer,
-            callId: data.callId || callInfo.callId,
-            roomId: data.roomId || callInfo.roomId
-          });
-          
-          console.log('📤 Sent answer from new connection');
-        }
-        
-      } catch (error) {
-        console.error('❌ Error handling offer:', error);
-        
-        // Specific handling for InvalidStateError
-        if (error.name === 'InvalidStateError') {
-          console.log('🔄 Invalid state, attempting recovery...');
-          
-          const pc = peerConnectionRef.current;
-          
-          if (pc) {
-            // Check current state
-            console.log('📊 Current peer connection state:', {
-              signalingState: pc.signalingState,
-              connectionState: pc.connectionState,
-              iceConnectionState: pc.iceConnectionState,
-              hasLocalDescription: !!pc.localDescription,
-              hasRemoteDescription: !!pc.remoteDescription
-            });
-            
-            // If we're in a bad state, create new connection
-            if (pc.signalingState === 'closed' || pc.connectionState === 'failed') {
-              console.log('🔄 Creating new peer connection due to bad state...');
-              pc.close();
-              
-              const servers = iceServers.length > 0 ? iceServers : await fetchIceServers();
-              const newPc = createPeerConnection(servers);
-              
-              // Add local tracks
-              if (localStreamRef.current) {
-                localStreamRef.current.getTracks().forEach(track => {
-                  newPc.addTrack(track, localStreamRef.current);
-                });
-              }
-              
-              // Retry the offer
-              setTimeout(() => {
-                handleWebRTCOffer(data);
-              }, 500);
-            } else {
-              // Try to send existing answer if we have one
-              if (pc.localDescription && pc.localDescription.type === 'answer') {
-                console.log('📤 Sending existing answer...');
-                sendWebRTCAnswer({
-                  to: data.from,
-                  sdp: pc.localDescription,
-                  callId: data.callId || callInfo.callId,
-                  roomId: data.roomId || callInfo.roomId
-                });
-              }
-            }
-          }
-        }
-      }
-    } else {
-      console.error('❌ No peer connection available');
-    }
-  } else if (callInfo.isCaller) {
-    console.log('ℹ️ Received offer but we are caller, ignoring');
-  } else {
-    console.warn('⚠️ Cannot handle offer:', {
-      hasSDP: !!data.sdp,
-      isCaller: callInfo.isCaller,
-      hasPeerConnection: !!peerConnectionRef.current
+    // Create and send answer
+    const answer = await pc.createAnswer({
+      offerToReceiveAudio: true,
+      offerToReceiveVideo: true
     });
+    
+    await pc.setLocalDescription(answer);
+    console.log('✅ Local description (answer) set');
+    
+    sendWebRTCAnswer({
+      to: data.from,
+      sdp: answer,
+      callId: data.callId || callInfo.callId,
+      roomId: data.roomId || callInfo.roomId
+    });
+    
+    console.log('📤 WebRTC answer sent to caller');
+    
+  } catch (error) {
+    console.error('❌ Error handling offer:', error);
   }
-}, [callInfo, sendWebRTCAnswer, iceServers, createPeerConnection, fetchIceServers]);
-
-
+}, [callInfo, sendWebRTCAnswer, sendWebRTCOffer, userProfile, isVideoEnabled, isAudioEnabled, socket]);
 
 const handleWebRTCAnswer = useCallback(async (data) => {
   console.log('✅ Received WebRTC answer:', {
@@ -1307,115 +1446,133 @@ const handleWebRTCAnswer = useCallback(async (data) => {
     }));
   }
   
-  // CRITICAL FIX: The CALLEE should handle the answer, not the caller!
-  // The caller sends the offer, the callee sends the answer back
-  // So when we receive an answer, we must be the CALLER
-  if (callInfo.isCaller && peerConnectionRef.current && data.sdp) {
+  const pc = peerConnectionRef.current;
+  
+  if (!pc || !data.sdp) {
+    console.warn('⚠️ No peer connection or SDP, ignoring answer');
+    return;
+  }
+  
+  // Get current signaling state
+  const signalingState = pc.signalingState;
+  const hasLocalOffer = pc.localDescription?.type === 'offer';
+  const hasRemoteOffer = pc.remoteDescription?.type === 'offer';
+  
+  console.log('📊 Current signaling state:', {
+    signalingState,
+    localDescription: pc.localDescription?.type,
+    remoteDescription: pc.remoteDescription?.type,
+    isCaller: callInfo.isCaller,
+    hasLocalOffer,
+    hasRemoteOffer
+  });
+  
+  // CRITICAL FIX: Determine if we should handle this answer based on ACTUAL STATE
+  // not just isCaller flag
+  
+  // Case 1: We have a local offer (we sent an offer) - we're the CALLER
+  if (hasLocalOffer && !hasRemoteOffer) {
+    console.log('🎯 We sent an offer (CALLER), handling answer from callee...');
+    
     try {
-      console.log('📝 Setting remote description from answer (we are the caller)...');
-      
-      // First, check if we already have a remote description
-      if (peerConnectionRef.current.remoteDescription) {
-        console.log('ℹ️ Remote description already set, updating...');
+      // Set our role correctly
+      if (!callInfo.isCaller) {
+        console.log('🔄 Correcting role: setting isCaller = true');
+        setCallInfo(prev => ({ ...prev, isCaller: true }));
       }
       
-      await peerConnectionRef.current.setRemoteDescription(
-        new RTCSessionDescription(data.sdp)
-      );
-      console.log('✅ Remote description set from answer');
+      // Set remote description (answer)
+      await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+      console.log('✅ Remote description (answer) set');
       
-      // Set connection status
       setConnectionStatus('connected');
-      
-      // Force check for tracks
-      setTimeout(() => {
-        if (peerConnectionRef.current) {
-          const receivers = peerConnectionRef.current.getReceivers();
-          console.log('📊 Active receivers after answer:', receivers.length);
-          
-          receivers.forEach((receiver, idx) => {
-            console.log(`  Receiver ${idx}:`, {
-              trackKind: receiver.track?.kind,
-              trackId: receiver.track?.id?.substring(0, 8),
-              trackEnabled: receiver.track?.enabled,
-              trackState: receiver.track?.readyState
-            });
-            
-            // If we have a track but no stream, create one
-            if (receiver.track && !remoteStreamRef.current) {
-              console.log('🎯 Creating remote stream from track');
-              remoteStreamRef.current = new MediaStream();
-              remoteStreamRef.current.addTrack(receiver.track);
-              
-              if (remoteVideoRef.current) {
-                remoteVideoRef.current.srcObject = remoteStreamRef.current;
-                console.log('✅ Set remote video srcObject');
-                
-                // Try to play the video
-                remoteVideoRef.current.play().catch(err => {
-                  console.warn('⚠️ Auto-play failed:', err);
-                });
-              }
-              
-              setRemoteStream(remoteStreamRef.current);
-              monitorRemoteStream(remoteStreamRef.current);
-            }
-          });
-        }
-      }, 1000);
-      
       addNotification('Video call connected!', 'success');
       
-    } catch (error) {
-      console.error('❌ Error handling answer:', error);
+      // Debug: Check receivers
+      setTimeout(() => {
+        const receivers = pc.getReceivers();
+        console.log('📊 Active receivers after answer:', receivers.length);
+      }, 500);
       
-      // Check current state
-      console.log('📊 Current peer connection state:', {
-        signalingState: peerConnectionRef.current?.signalingState,
-        connectionState: peerConnectionRef.current?.connectionState,
-        iceConnectionState: peerConnectionRef.current?.iceConnectionState
+    } catch (error) {
+      console.error('❌ Error setting remote description:', error);
+    }
+    
+  } 
+  // Case 2: We have a remote offer (we received an offer) - we're the CALLEE
+  else if (hasRemoteOffer && !hasLocalOffer) {
+    console.log('❌ We received an offer (CALLEE) but got an answer - ignoring');
+    console.log('ℹ️ As callee, we should send answers, not receive them');
+    
+    // We might need to send our answer again
+    if (pc.localDescription?.type === 'answer') {
+      console.log('🔄 Re-sending our answer...');
+      sendWebRTCAnswer({
+        to: data.from,
+        sdp: pc.localDescription,
+        callId: data.callId || callInfo.callId,
+        roomId: data.roomId || callInfo.roomId
       });
     }
-  } else {
-    console.warn('⚠️ Not handling answer because:', {
-      isCaller: callInfo.isCaller,
-      hasPeerConnection: !!peerConnectionRef.current,
-      hasSDP: !!data.sdp,
-      role: callInfo.isCaller ? 'caller (should handle)' : 'callee (should not handle)'
-    });
     
-    // If we're the callee but received an answer, something is wrong
-    if (!callInfo.isCaller) {
-      console.log('🔄 We are callee but received answer, checking state...');
+  } 
+  // Case 3: Race condition - both have offers (GLARE condition)
+  else if (hasLocalOffer && hasRemoteOffer) {
+    console.warn('⚠️ GLARE CONDITION: Both users sent offers!');
+    console.log('🔄 Resolving glare: We will be callee, rollback our offer');
+    
+    // Rollback: We'll be the callee
+    try {
+      // Set remote description (the other user's offer)
+      await pc.setRemoteDescription(pc.remoteDescription || new RTCSessionDescription(data.sdp));
       
-      // Maybe we should send an offer instead?
-      if (peerConnectionRef.current && localStreamRef.current) {
-        console.log('📤 Sending offer as callee (recovery)...');
-        try {
-          const offer = await peerConnectionRef.current.createOffer();
-          await peerConnectionRef.current.setLocalDescription(offer);
-          
-          sendWebRTCOffer({
-            to: data.from,
-            sdp: offer,
-            callId: data.callId || callInfo.callId,
-            roomId: data.roomId || callInfo.roomId,
-            metadata: {
-              username: userProfile?.username || 'Anonymous',
-              videoEnabled: isVideoEnabled,
-              audioEnabled: isAudioEnabled
-            }
-          });
-          
-          console.log('📤 Sent recovery offer');
-        } catch (error) {
-          console.error('❌ Failed to send recovery offer:', error);
-        }
+      // Create and send answer
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      
+      sendWebRTCAnswer({
+        to: data.from,
+        sdp: answer,
+        callId: data.callId || callInfo.callId,
+        roomId: data.roomId || callInfo.roomId
+      });
+      
+      console.log('📤 Sent answer after glare resolution');
+      setCallInfo(prev => ({ ...prev, isCaller: false }));
+      
+    } catch (error) {
+      console.error('❌ Error resolving glare condition:', error);
+    }
+    
+  }
+  // Case 4: Stable state - answer might be duplicate
+  else if (signalingState === 'stable') {
+    console.log('ℹ️ Already in stable state, answer might be duplicate');
+    
+    // Check if we need to update remote description
+    if (!pc.remoteDescription || pc.remoteDescription.type !== 'answer') {
+      try {
+        await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+        console.log('✅ Updated to answer in stable state');
+      } catch (error) {
+        console.warn('⚠️ Could not update remote description:', error.message);
       }
     }
+    
   }
-}, [callInfo, sendWebRTCOffer, userProfile, isVideoEnabled, isAudioEnabled]);
-
+  // Case 5: Unknown state
+  else {
+    console.warn(`⚠️ Unknown state for answer handling: ${signalingState}`);
+    
+    // Try to handle anyway
+    try {
+      await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+      console.log('✅ Set remote description in unknown state');
+    } catch (error) {
+      console.error('❌ Failed to set remote description:', error);
+    }
+  }
+}, [callInfo, sendWebRTCAnswer]);
 
 const handleWebRTCIceCandidate = useCallback(async (data) => {
   console.log('🧊 Received ICE candidate:', {
