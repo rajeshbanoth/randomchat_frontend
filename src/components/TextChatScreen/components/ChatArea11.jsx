@@ -1,7 +1,7 @@
 import React from 'react';
 import { 
   FaComments, FaTimes, FaSync, FaHeart, FaSearch,
-  FaUserFriends, FaLightbulb, FaRobot
+  FaUserFriends, FaLightbulb, FaRobot, FaShieldAlt
 } from 'react-icons/fa';
 import { HiOutlineSparkles, HiOutlineLightningBolt } from 'react-icons/hi';
 import MessageBubble from './MessageBubble';
@@ -22,6 +22,14 @@ const ChatArea = ({
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  // Check messages for safety warnings
+  const countWarnings = () => {
+    const warningMessages = messages.filter(msg => 
+      msg.warnings && msg.warnings.length > 0 && msg.sender !== 'me'
+    );
+    return warningMessages.length;
   };
 
   const renderTypingIndicator = () => {
@@ -50,7 +58,6 @@ const ChatArea = ({
   };
 
   // Initial state - no messages
-  //sample registration
   const renderInitialEmptyState = () => {
     return (
       <div className="text-center py-16 px-4">
@@ -79,6 +86,32 @@ const ChatArea = ({
             )}
           </div>
         )}
+        
+        {/* Safety tips */}
+        <div className="mt-12 p-6 bg-gradient-to-r from-amber-900/10 to-rose-900/10 backdrop-blur-sm rounded-2xl border border-amber-700/30 max-w-2xl mx-auto">
+          <div className="flex items-center mb-4">
+            <FaShieldAlt className="text-amber-400 text-xl mr-3" />
+            <h4 className="text-lg font-semibold text-amber-300">Safety Tips</h4>
+          </div>
+          <ul className="text-left text-gray-300 space-y-2 text-sm">
+            <li className="flex items-start">
+              <span className="text-amber-400 mr-2">•</span>
+              Never share personal information (phone, address, etc.)
+            </li>
+            <li className="flex items-start">
+              <span className="text-amber-400 mr-2">•</span>
+              Be cautious of links - they may be malicious
+            </li>
+            <li className="flex items-start">
+              <span className="text-amber-400 mr-2">•</span>
+              Report suspicious behavior immediately
+            </li>
+            <li className="flex items-start">
+              <span className="text-amber-400 mr-2">•</span>
+              Our system will warn you about sensitive content
+            </li>
+          </ul>
+        </div>
       </div>
     );
   };
@@ -87,6 +120,18 @@ const ChatArea = ({
   const renderChatWithMessages = () => {
     return (
       <div className="space-y-4 pb-4">
+        {/* Warning summary for the conversation */}
+        {countWarnings() > 0 && (
+          <div className="sticky top-4 z-10 mx-4">
+            <div className="inline-flex items-center px-4 py-2 rounded-full bg-gradient-to-r from-amber-600/20 to-rose-600/20 backdrop-blur-sm border border-amber-500/30">
+              <FaShieldAlt className="text-amber-400 mr-2" />
+              <span className="text-sm text-amber-300">
+                {countWarnings()} message(s) contain warnings
+              </span>
+            </div>
+          </div>
+        )}
+        
         {messages.map((msg, index) => (
           <MessageBubble
             key={index}

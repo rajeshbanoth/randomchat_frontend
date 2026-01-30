@@ -118,7 +118,7 @@ const SearchingScreen = ({ mode, searchTime, onBack, onScanQR }) => {
           </button>
           
           <div className="flex items-center space-x-2">
-            <button
+            {/* <button
               onClick={togglePause}
               className="p-2.5 rounded-full bg-gradient-to-r from-gray-800/50 to-gray-900/50 hover:from-gray-700/50 hover:to-gray-800/50 backdrop-blur-sm border border-gray-700/50 transition-all duration-300 group"
               title={isPaused ? "Resume Search" : "Pause Search"}
@@ -132,7 +132,7 @@ const SearchingScreen = ({ mode, searchTime, onBack, onScanQR }) => {
               title="Scan QR Code"
             >
               <FaQrcode className="text-blue-400 group-hover:rotate-12 transition-transform" />
-            </button>
+            </button> */}
             
             <button
               onClick={() => setShowAdvanced(!showAdvanced)}
@@ -296,7 +296,7 @@ const SearchingScreen = ({ mode, searchTime, onBack, onScanQR }) => {
 
           {/* Action Buttons */}
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button
+            {/* <button
               onClick={togglePause}
               className={`px-8 py-4 rounded-xl font-medium flex items-center justify-center space-x-3 transition-all duration-300 ${
                 isPaused
@@ -324,7 +324,7 @@ const SearchingScreen = ({ mode, searchTime, onBack, onScanQR }) => {
               <FaQrcode />
               <span>Quick Connect via QR</span>
             </button>
-            
+             */}
             <button
               onClick={onBack}
               className="px-8 py-4 bg-gradient-to-r from-gray-800 to-gray-900 hover:from-gray-700 hover:to-gray-800 border border-gray-700/50 rounded-xl font-medium flex items-center justify-center space-x-3 transition-all duration-300"
