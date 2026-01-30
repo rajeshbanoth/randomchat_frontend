@@ -50,6 +50,7 @@ const ChatArea = ({
   };
 
   // Initial state - no messages
+  //sample registration
   const renderInitialEmptyState = () => {
     return (
       <div className="text-center py-16 px-4">
