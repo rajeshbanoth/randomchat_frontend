@@ -1,749 +1,3 @@
-// // src/context/ChatContext.jsx
-// import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-// import { io } from 'socket.io-client';
-
-// const SOCKET_SERVER_URL = 'http://localhost:5000';
-
-// const ChatContext = createContext();
-
-// export const ChatProvider = ({ children }) => {
-//   const [socket, setSocket] = useState(null);
-//   const [connected, setConnected] = useState(false);
-//   const [currentScreen, setCurrentScreen] = useState('home');
-//   const [userProfile, setUserProfile] = useState(null);
-//   const [partner, setPartner] = useState(null);
-//   const [messages, setMessages] = useState([]);
-//   const [onlineCount, setOnlineCount] = useState(0);
-//   const [searching, setSearching] = useState(false);
-//   const [notifications, setNotifications] = useState([]);
-//   const [interests, setInterests] = useState([]);
-//   const [autoConnect, setAutoConnect] = useState(true);
-//   const [currentChatMode, setCurrentChatMode] = useState('text');
-//   const [searchTime, setSearchTime] = useState(0);
-//   const [partnerTyping, setPartnerTyping] = useState(false);
-  
-//   const socketRef = useRef(null);
-//   const searchTimerRef = useRef(null);
-//   const typingTimeoutRef = useRef(null);
-//   const lastTypingEmittedRef = useRef(0);
-//   const typingDebounceRef = useRef(null);
-
-
-//   // Debug useEffect for search state
-// useEffect(() => {
-//   console.log('🔍 Search State Update:', {
-//     searching,
-//     partner: partner ? partner.profile?.username : 'None',
-//     searchTime,
-//     currentScreen,
-//     autoConnect
-//   });
-// }, [searching, partner, searchTime, currentScreen, autoConnect]);
-
-// // Debug useEffect for socket events
-// useEffect(() => {
-//   if (!socketRef.current) return;
-  
-//   const handleSearchEvent = (data) => {
-//     console.log('🔍 Socket search event fired:', data);
-//   };
-  
-//   socketRef.current.on('search', handleSearchEvent);
-  
-//   return () => {
-//     socketRef.current.off('search', handleSearchEvent);
-//   };
-// }, [socketRef.current]);
-
-//   const addNotification = (message, type = 'info') => {
-//     const id = Date.now();
-//     const notification = { id, message, type };
-    
-//     setNotifications(prev => [notification, ...prev.slice(0, 3)]);
-    
-//     setTimeout(() => {
-//       setNotifications(prev => prev.filter(n => n.id !== id));
-//     }, 4000);
-//   };
-
-//   const startSearch = (mode) => {
-//     if (!socketRef.current || !connected) {
-//       addNotification('Not connected to server', 'error');
-//       return;
-//     }
-
-//     if (!userProfile) {
-//       addNotification('Please create a profile first', 'error');
-//       setCurrentScreen('profile');
-//       return;
-//     }
-
-//     console.log(`Starting ${mode} chat search`);
-    
-//     setCurrentChatMode(mode);
-//     setSearching(true);
-//     setPartner(null);
-//     setMessages([]);
-//     setSearchTime(0);
-//     setPartnerTyping(false);
-
-//     const updatedProfile = {
-//       ...userProfile,
-//       chatMode: mode,
-//       interests: interests,
-//       socketId: socketRef.current.id,
-//       id: socketRef.current.id
-//     };
-    
-//     setUserProfile(updatedProfile);
-//     localStorage.setItem('omegle-profile', JSON.stringify(updatedProfile));
-    
-//     socketRef.current.emit('search', {
-//       mode: mode,
-//       interests: interests,
-//       genderPreference: userProfile.genderPreference || 'any',
-//       ageRange: userProfile.ageRange || { min: 18, max: 60 },
-//       isPremium: userProfile.isPremium || false,
-//       timestamp: Date.now()
-//     });
-    
-//     if (mode === 'video') {
-//       setCurrentScreen('video-chat');
-//     } else {
-//       setCurrentScreen('text-chat');
-//     }
-    
-//     addNotification(`Searching for ${mode} chat partner...`, 'info');
-//   };
-
-//   const resetSearchState = () => {
-//   console.log('🔄 Resetting search state');
-  
-//   // Clear all timers
-//   if (searchTimerRef.current) {
-//     clearInterval(searchTimerRef.current);
-//     searchTimerRef.current = null;
-//   }
-  
-//   if (typingTimeoutRef.current) {
-//     clearTimeout(typingTimeoutRef.current);
-//     typingTimeoutRef.current = null;
-//   }
-  
-//   if (typingDebounceRef.current) {
-//     clearTimeout(typingDebounceRef.current);
-//     typingDebounceRef.current = null;
-//   }
-  
-//   // Reset states
-//   setPartner(null);
-//   setMessages([]);
-//   setSearchTime(0);
-//   setPartnerTyping(false);
-//   setSearching(false);
-  
-//   lastTypingEmittedRef.current = 0;
-// };
-
-//   const disconnectPartner = () => {
-//     if (!socketRef.current || !partner) return;
-
-//     socketRef.current.emit('disconnect-partner', {
-//       reason: 'user_request',
-//       timestamp: Date.now()
-//     });
-
-//     setPartner(null);
-//     setMessages([]);
-//     setPartnerTyping(false);
-//     addNotification('Disconnected from partner', 'info');
-//     setCurrentScreen('home');
-//   };
-
-//   const sendMessage = (text, isSystem = false) => {
-//     if (!socketRef.current || !text || !partner) return;
-
-//     const messageData = {
-//       text: text,
-//       type: isSystem ? 'system' : 'text',
-//       timestamp: Date.now(),
-//       senderId: userProfile?.id,
-//       senderName: userProfile?.username
-//     };
-
-//     if (!isSystem) {
-//       socketRef.current.emit('message', messageData);
-//     }
-    
-//     setMessages(prev => [...prev, {
-//       ...messageData,
-//       sender: isSystem ? 'system' : 'me'
-//     }]);
-    
-//     handleTypingStop();
-//   };
-
-// const nextPartner = () => {
-//   if (!socketRef.current) return;
-
-//   // If we're already searching, don't start another search
-//   if (searching) {
-//     console.log('⚠️ Already searching, skipping duplicate nextPartner call');
-//     return;
-//   }
-
-//   console.log('🔄 Switching to next partner...');
-  
-//   // Clear all timeouts
-//   setPartnerTyping(false);
-//   if (typingTimeoutRef.current) {
-//     clearTimeout(typingTimeoutRef.current);
-//   }
-//   if (typingDebounceRef.current) {
-//     clearTimeout(typingDebounceRef.current);
-//   }
-  
-//   // If we have a partner, disconnect first
-//   if (partner) {
-//     console.log('🔌 Disconnecting from current partner before searching');
-//     socketRef.current.emit('next', {
-//       reason: 'user_requested_next',
-//       timestamp: Date.now(),
-//       currentMode: currentChatMode,
-//       partnerId: partner.id || partner._id
-//     });
-//   }
-  
-//   // Clear partner and start searching
-//   setPartner(null);
-//   setMessages([]);
-//   setSearching(true);
-//   setSearchTime(0);
-  
-//   // Add system message
-//   setMessages(prev => [...prev, {
-//     type: 'system',
-//     text: 'Disconnected. Searching for new partner...',
-//     timestamp: Date.now(),
-//     sender: 'system'
-//   }]);
-  
-//   // Clear any existing search timer
-//   if (searchTimerRef.current) {
-//     clearInterval(searchTimerRef.current);
-//   }
-  
-//   // Start new search timer
-//   searchTimerRef.current = setInterval(() => {
-//     setSearchTime(prev => prev + 1);
-//   }, 1000);
-  
-//   // Prepare search data
-//   const searchData = {
-//     mode: currentChatMode,
-//     interests: interests || [],
-//     genderPreference: userProfile?.genderPreference || 'any',
-//     ageRange: userProfile?.ageRange || { min: 18, max: 60 },
-//     isPremium: userProfile?.isPremium || false,
-//     socketId: socketRef.current.id,
-//     userId: userProfile?.id || socketRef.current.id,
-//     username: userProfile?.username || 'Anonymous',
-//     timestamp: Date.now()
-//   };
-  
-//   console.log('🔍 Emitting search from nextPartner:', searchData);
-//   socketRef.current.emit('search', searchData);
-  
-//   addNotification('Looking for next partner...', 'info');
-// };
-
-//   const updateInterests = (newInterests) => {
-//     setInterests(newInterests);
-    
-//     if (userProfile) {
-//       const updatedProfile = { 
-//         ...userProfile, 
-//         interests: newInterests 
-//       };
-//       setUserProfile(updatedProfile);
-//       localStorage.setItem('omegle-profile', JSON.stringify(updatedProfile));
-      
-//       if (socketRef.current?.connected) {
-//         socketRef.current.emit('register', updatedProfile);
-//       }
-//     }
-//   };
-
-//   const updateUserProfile = (profile) => {
-//     const fullProfile = {
-//       ...profile,
-//       socketId: socketRef.current?.id,
-//       id: socketRef.current?.id,
-//       chatMode: profile.chatMode || 'text',
-//       interests: profile.interests || [],
-//       genderPreference: profile.genderPreference || 'any',
-//       ageRange: profile.ageRange || { min: 18, max: 60 },
-//       isPremium: profile.isPremium || false,
-//       avatar: profile.avatar || null,
-//       bio: profile.bio || '',
-//       createdAt: profile.createdAt || Date.now()
-//     };
-    
-//     setUserProfile(fullProfile);
-//     setInterests(fullProfile.interests || []);
-//     setCurrentChatMode(fullProfile.chatMode);
-//     localStorage.setItem('omegle-profile', JSON.stringify(fullProfile));
-    
-//     if (socketRef.current?.connected) {
-//       socketRef.current.emit('register', fullProfile);
-//     }
-    
-//     setCurrentScreen('home');
-//     addNotification('Profile saved successfully!', 'success');
-//   };
-
-//   const handleTypingStart = () => {
-//     if (!socketRef.current || !partner) return;
-    
-//     const now = Date.now();
-    
-//     if (now - lastTypingEmittedRef.current < 500) {
-//       return;
-//     }
-    
-//     lastTypingEmittedRef.current = now;
-    
-//     const typingData = {
-//       partnerId: partner.id,
-//       userId: userProfile?.id || socketRef.current.id,
-//       username: userProfile?.username,
-//       timestamp: now
-//     };
-    
-//     console.log('⌨️ Emitting typing START:', typingData);
-//     socketRef.current.emit('typing', typingData);
-    
-//     if (typingDebounceRef.current) {
-//       clearTimeout(typingDebounceRef.current);
-//     }
-//   };
-
-//   const handleTypingStop = () => {
-//     if (!socketRef.current || !partner) return;
-    
-//     if (typingDebounceRef.current) {
-//       clearTimeout(typingDebounceRef.current);
-//     }
-    
-//     typingDebounceRef.current = setTimeout(() => {
-//       const typingData = {
-//         partnerId: partner.id,
-//         userId: userProfile?.id || socketRef.current.id,
-//         timestamp: Date.now()
-//       };
-      
-//       console.log('💤 Emitting typing STOP:', typingData);
-//       socketRef.current.emit('typingStopped', typingData);
-      
-//       typingDebounceRef.current = null;
-//     }, 1000);
-//   };
-
-//   // Initialize socket connection
-//   useEffect(() => {
-//     if (socketRef.current && socketRef.current.connected) {
-//       console.log('Socket already connected');
-//       return;
-//     }
-
-//     console.log('Initializing socket connection...');
-    
-//     const newSocket = io(SOCKET_SERVER_URL, {
-//       transports: ['websocket', 'polling'],
-//       reconnection: true,
-//       reconnectionAttempts: 5,
-//       reconnectionDelay: 1000,
-//       timeout: 30000,
-//       autoConnect: true
-//     });
-    
-//     socketRef.current = newSocket;
-//     setSocket(newSocket);
-
-//     newSocket.on('connect', () => {
-//       console.log('✅ Connected to server with ID:', newSocket.id);
-//       setConnected(true);
-      
-//       const savedProfile = localStorage.getItem('omegle-profile');
-//       if (savedProfile) {
-//         try {
-//           const profile = JSON.parse(savedProfile);
-//           console.log('📂 Loaded profile:', profile.username);
-          
-//           const updatedProfile = {
-//             ...profile,
-//             socketId: newSocket.id,
-//             id: newSocket.id
-//           };
-          
-//           setUserProfile(updatedProfile);
-//           setInterests(profile.interests || []);
-//           setCurrentChatMode(profile.chatMode || 'text');
-          
-//           newSocket.emit('register', updatedProfile);
-          
-//         } catch (error) {
-//           console.error('Error loading profile:', error);
-//           localStorage.removeItem('omegle-profile');
-//           setCurrentScreen('profile');
-//         }
-//       } else {
-//         setCurrentScreen('profile');
-//       }
-      
-//       addNotification('Connected to server', 'success');
-//     });
-
-//     newSocket.on('disconnect', (reason) => {
-//       console.log('🔌 Disconnected from server:', reason);
-//       setConnected(false);
-//       addNotification('Disconnected from server', 'warning');
-//     });
-
-//     newSocket.on('connect_error', (error) => {
-//       console.error('Connection error:', error.message);
-//       setConnected(false);
-//       addNotification('Connection error', 'error');
-//     });
-
-//     newSocket.on('registered', (data) => {
-//       console.log('✅ Registered successfully:', data.profile?.username);
-//       if (data.profile) {
-//         const updatedProfile = {
-//           ...data.profile,
-//           id: newSocket.id
-//         };
-//         setUserProfile(updatedProfile);
-//         setInterests(data.profile.interests || []);
-//         setCurrentChatMode(data.profile.chatMode || 'text');
-//       }
-//       setCurrentScreen('home');
-//       addNotification(`Welcome ${data.profile?.username || 'User'}!`, 'success');
-//     });
-
-//     newSocket.on('partnerTyping', (data) => {
-//       console.log('⌨️ Partner Typing Event:', data);
-      
-//       if (partner && data.userId === partner.id) {
-//         console.log('✅ Valid partner typing event');
-//         setPartnerTyping(true);
-        
-//         if (typingTimeoutRef.current) {
-//           clearTimeout(typingTimeoutRef.current);
-//         }
-        
-//         typingTimeoutRef.current = setTimeout(() => {
-//           console.log('⏰ Auto-clearing partner typing (timeout)');
-//           setPartnerTyping(false);
-//         }, 3000);
-//       } else {
-//         console.log('❌ Typing event from non-partner or no partner');
-//       }
-//     });
-
-//     newSocket.on('partnerTypingStopped', (data) => {
-//       console.log('💤 Partner Typing Stopped Event:', data);
-      
-//       if (partner && data.userId === partner.id) {
-//         console.log('✅ Valid partner typing stopped event');
-//         setPartnerTyping(false);
-        
-//         if (typingTimeoutRef.current) {
-//           clearTimeout(typingTimeoutRef.current);
-//           typingTimeoutRef.current = null;
-//         }
-//       }
-//     });
-
-//     newSocket.on('searching', () => {
-//       console.log('🔍 Searching for partner...');
-//       setSearching(true);
-//       setSearchTime(0);
-//       addNotification('Searching for partner...', 'info');
-//     });
-
-// newSocket.on('matched', (data) => {
-//   console.log('🎯 Matched with partner:', {
-//     partnerId: data.id,
-//     username: data.profile?.username,
-//     mode: data.profile?.chatMode,
-//     data: data
-//   });
-  
-//   // Clear search timer
-//   if (searchTimerRef.current) {
-//     clearInterval(searchTimerRef.current);
-//     searchTimerRef.current = null;
-//   }
-  
-//   setSearching(false);
-//   setPartnerTyping(false);
-  
-//   const partnerMode = data.profile?.chatMode || 'text';
-//   if (partnerMode !== currentChatMode) {
-//     console.warn('Mode mismatch! Our mode:', currentChatMode, 'Partner mode:', partnerMode);
-//     addNotification('Partner mode mismatch. Please try again.', 'warning');
-    
-//     setTimeout(() => {
-//       startSearch(currentChatMode);
-//     }, 1000);
-//     return;
-//   }
-  
-//   // Set partner and clear messages
-//   setPartner(data);
-//   setMessages([]);
-  
-//   addNotification(`Matched with ${data.profile?.username || 'stranger'}`, 'success');
-  
-//   // Ensure we're on the correct screen
-//   if (currentChatMode === 'video' && currentScreen !== 'video-chat') {
-//     setCurrentScreen('video-chat');
-//   } else if (currentChatMode === 'text' && currentScreen !== 'text-chat') {
-//     setCurrentScreen('text-chat');
-//   }
-// });
-
-//     newSocket.on('partnerDisconnected', (data) => {
-//   console.log('🚫 Partner Disconnected Event:', data);
-  
-//   // Clear all timeouts first
-//   setPartnerTyping(false);
-//   if (typingTimeoutRef.current) {
-//     clearTimeout(typingTimeoutRef.current);
-//     typingTimeoutRef.current = null;
-//   }
-  
-//   if (typingDebounceRef.current) {
-//     clearTimeout(typingDebounceRef.current);
-//     typingDebounceRef.current = null;
-//   }
-  
-//   // Clear search timer if exists
-//   if (searchTimerRef.current) {
-//     clearInterval(searchTimerRef.current);
-//     searchTimerRef.current = null;
-//   }
-  
-//   setPartner(null);
-  
-//   // Add disconnect message
-//   setMessages(prev => [...prev, {
-//     type: 'system',
-//     text: 'Partner has left the chat',
-//     timestamp: Date.now(),
-//     sender: 'system'
-//   }]);
-  
-//   addNotification('Partner disconnected', 'info');
-  
-//   // Handle auto-connect
-//   if (autoConnect && (currentScreen === 'text-chat' || currentScreen === 'video-chat')) {
-//     console.log('🔄 Auto-connect triggered after partner disconnect');
-    
-//     // Clear any previous search state
-//     setSearching(false);
-    
-//     // Wait a moment then start new search
-//     setTimeout(() => {
-//       console.log('🔍 Starting auto-connect search...');
-      
-//       // Force state reset
-//       setPartner(null);
-//       setMessages([]);
-//       setSearching(true);
-//       setSearchTime(0);
-      
-//       // Start search timer
-//       searchTimerRef.current = setInterval(() => {
-//         setSearchTime(prev => prev + 1);
-//       }, 1000);
-      
-//       // Prepare search data
-//       const searchData = {
-//         mode: currentChatMode,
-//         interests: interests || [],
-//         genderPreference: userProfile?.genderPreference || 'any',
-//         ageRange: userProfile?.ageRange || { min: 18, max: 60 },
-//         isPremium: userProfile?.isPremium || false,
-//         socketId: newSocket.id,
-//         userId: userProfile?.id || newSocket.id,
-//         username: userProfile?.username || 'Anonymous',
-//         timestamp: Date.now()
-//       };
-      
-//       console.log('📤 Emitting search for auto-connect:', searchData);
-//       newSocket.emit('search', searchData);
-      
-//       addNotification('Searching for new partner...', 'info');
-      
-//     }, 500); // Reduced delay to 500ms
-//   }
-// });
-
-//     // newSocket.on('partnerDisconnected', (data) => {
-//     //   console.log('🚫 Partner Disconnected Event:', data);
-      
-//     //   setPartnerTyping(false);
-//     //   if (typingTimeoutRef.current) {
-//     //     clearTimeout(typingTimeoutRef.current);
-//     //     typingTimeoutRef.current = null;
-//     //   }
-      
-//     //   if (typingDebounceRef.current) {
-//     //     clearTimeout(typingDebounceRef.current);
-//     //     typingDebounceRef.current = null;
-//     //   }
-      
-//     //   setPartner(null);
-      
-//     //   setMessages(prev => [...prev, {
-//     //     type: 'system',
-//     //     text: 'Partner has left the chat',
-//     //     timestamp: Date.now(),
-//     //     sender: 'system'
-//     //   }]);
-      
-//     //   addNotification('Partner disconnected', 'info');
-      
-//     //   if (autoConnect && (currentScreen === 'text-chat' || currentScreen === 'video-chat')) {
-//     //     setTimeout(() => {
-//     //       if (!searching) {
-//     //         setSearching(true);
-//     //         setSearchTime(0);
-//     //         newSocket.emit('search', {
-//     //           mode: currentChatMode,
-//     //           interests: interests,
-//     //           genderPreference: userProfile?.genderPreference || 'any',
-//     //           ageRange: userProfile?.ageRange || { min: 18, max: 60 },
-//     //           isPremium: userProfile?.isPremium || false,
-//     //           timestamp: Date.now()
-//     //         });
-//     //         addNotification('Searching for new partner...', 'info');
-//     //       }
-//     //     }, 2000);
-//     //   }
-//     // });
-
-//     newSocket.on('message', (data) => {
-//       console.log('💬 Message received:', data.text);
-//       setMessages(prev => [...prev, {
-//         text: data.text,
-//         sender: 'partner',
-//         timestamp: data.timestamp,
-//         senderName: data.senderName
-//       }]);
-      
-//       setPartnerTyping(false);
-//       if (typingTimeoutRef.current) {
-//         clearTimeout(typingTimeoutRef.current);
-//         typingTimeoutRef.current = null;
-//       }
-//     });
-
-//     newSocket.on('stats', (data) => {
-//       setOnlineCount(data.online || 0);
-//     });
-
-//     newSocket.on('error', (error) => {
-//       console.error('Socket error:', error);
-//       addNotification(error.message || 'An error occurred', 'error');
-//     });
-
-//     return () => {
-//       if (socketRef.current) {
-//         socketRef.current.disconnect();
-//       }
-//       if (searchTimerRef.current) {
-//         clearInterval(searchTimerRef.current);
-//       }
-//       if (typingTimeoutRef.current) {
-//         clearTimeout(typingTimeoutRef.current);
-//       }
-//       if (typingDebounceRef.current) {
-//         clearTimeout(typingDebounceRef.current);
-//       }
-//     };
-//   }, [currentChatMode]);
-
-//   useEffect(() => {
-//     setPartnerTyping(false);
-//     if (typingTimeoutRef.current) {
-//       clearTimeout(typingTimeoutRef.current);
-//       typingTimeoutRef.current = null;
-//     }
-//     if (typingDebounceRef.current) {
-//       clearTimeout(typingDebounceRef.current);
-//       typingDebounceRef.current = null;
-//     }
-//     lastTypingEmittedRef.current = 0;
-//   }, [partner]);
-
-//   useEffect(() => {
-//     if (searching) {
-//       searchTimerRef.current = setInterval(() => {
-//         setSearchTime(prev => prev + 1);
-//       }, 1000);
-//     } else {
-//       if (searchTimerRef.current) {
-//         clearInterval(searchTimerRef.current);
-//       }
-//     }
-    
-//     return () => {
-//       if (searchTimerRef.current) {
-//         clearInterval(searchTimerRef.current);
-//       }
-//     };
-//   }, [searching]);
-
-//   return (
-//     <ChatContext.Provider value={{
-//       socket,
-//       connected,
-//       currentScreen,
-//       setCurrentScreen,
-//       userProfile,
-//       partner,
-//       messages,
-//       onlineCount,
-//       searching,
-//       setSearching,
-//       notifications,
-//       interests,
-//       setInterests,
-//       autoConnect,
-//       setAutoConnect,
-//       currentChatMode,
-//       searchTime,
-//       partnerTyping,
-//       startSearch,
-//       disconnectPartner,
-//       sendMessage,
-//       nextPartner,
-//       addNotification,
-//       updateInterests,
-//       updateUserProfile,
-//       handleTypingStart,
-//       handleTypingStop,
-//     }}>
-//       {children}
-//     </ChatContext.Provider>
-//   );
-// };
-
-// export const useChat = () => useContext(ChatContext);
-
 
 
 // src/context/ChatContext.jsx
@@ -755,7 +9,9 @@ import PropTypes from 'prop-types';
 const SOCKET_SERVER_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 const LOCAL_STORAGE_KEYS = {
   PROFILE: 'omegle-profile',
-  SETTINGS: 'omegle-settings'
+  SETTINGS: 'omegle-settings',
+   
+
 };
 const TYPING_DEBOUNCE_MS = 500;
 const TYPING_TIMEOUT_MS = 3000;
@@ -864,6 +120,9 @@ export const ChatProvider = ({ children }) => {
     }
   }, []);
 
+
+
+  
   /**
    * Add notification with type safety and validation
    */
@@ -1050,6 +309,73 @@ export const ChatProvider = ({ children }) => {
       return false;
     }
   }, []);
+
+
+  // Add this to the context value
+const toggleAutoConnect = useCallback(() => {
+  // Get current value from ref for immediate access
+  const currentValue = autoConnectRef.current;
+  const newValue = !currentValue;
+  
+  console.log('Toggling auto-connect:', {
+    from: currentValue,
+    to: newValue,
+    timestamp: Date.now()
+  });
+  
+  // Update state
+  safeSetState(setAutoConnect, newValue);
+  
+  // Update ref immediately
+  autoConnectRef.current = newValue;
+  
+  // Save to localStorage
+  try {
+    const savedSettings = localStorage.getItem(LOCAL_STORAGE_KEYS.SETTINGS);
+    const settings = savedSettings ? JSON.parse(savedSettings) : {};
+    settings.autoConnect = newValue;
+    settings.lastUpdated = Date.now();
+    localStorage.setItem(LOCAL_STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+    
+    console.log('Saved auto-connect setting to localStorage:', newValue);
+  } catch (error) {
+    console.error('Failed to save auto-connect setting:', error);
+    addNotification('Failed to save setting', 'error');
+  }
+  
+  // Show notification
+  addNotification(
+    newValue 
+      ? 'Auto-connect enabled: Will automatically search for new partners' 
+      : 'Auto-connect disabled: Manual search required',
+    'info'
+  );
+  
+  return newValue;
+}, [addNotification, safeSetState]);
+
+
+// In ChatContext.jsx, inside the ChatProvider component:
+
+// Add this effect AFTER your other effects but BEFORE the context value definition
+useEffect(() => {
+  // Load auto-connect setting from localStorage
+  try {
+    const savedSettings = localStorage.getItem(LOCAL_STORAGE_KEYS.SETTINGS);
+    if (savedSettings) {
+      const settings = JSON.parse(savedSettings);
+      if (settings.autoConnect !== undefined) {
+        safeSetState(setAutoConnect, settings.autoConnect);
+        autoConnectRef.current = settings.autoConnect;
+        console.log('Loaded auto-connect setting:', settings.autoConnect);
+      }
+    }
+  } catch (error) {
+    console.error('Failed to load settings:', error);
+  }
+}, [safeSetState]);
+
+// ==================== CONTEXT VALUE ====================
 
   /**
    * Handle typing stop with debouncing
@@ -1767,36 +1093,7 @@ export const ChatProvider = ({ children }) => {
       addNotification('Searching for partner...', 'info');
     });
 
-    // socketInstance.on('matched', (data) => {
-    //   console.log('Matched with partner:', data);
-      
-    //   if (searchTimerRef.current) {
-    //     clearInterval(searchTimerRef.current);
-    //     searchTimerRef.current = null;
-    //   }
-      
-    //   safeSetState(setSearching, false);
-    //   safeSetState(setPartnerTyping, false);
-      
-    //   const partnerMode = data.profile?.chatMode || 'text';
-    //   const currentMode = currentChatModeRef.current;
-    //   if (partnerMode !== currentMode) {
-    //     console.warn('Mode mismatch:', { currentMode, partnerMode });
-    //     addNotification('Partner mode mismatch. Please try again.', 'warning');
-        
-    //     // Try to search again after a delay
-    //     setTimeout(() => {
-    //       handleAutoSearch();
-    //     }, 1000);
-    //     return;
-    //   }
-      
-    //   safeSetState(setPartner, data);
-    //   safeSetState(setMessages, []);
-      
-    //   addNotification(`Matched with ${data.profile?.username || 'stranger'}`, 'success');
-    // });
-
+  
 
     // Update the matched event handler in setupSocketEventHandlers
 // Fix the matched event handler (remove early return)
@@ -2091,6 +1388,7 @@ const debugForcePartnerUpdate = useCallback((partnerData) => {
     partnerTyping,
     connectionError,
 
+  toggleAutoConnect,
 
     debugGetState,      // Add this
   debugForcePartnerUpdate , // Add this,

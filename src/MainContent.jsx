@@ -36,7 +36,8 @@ function MainContent() {
     connected,
     addNotification,
     handleTypingStart,
-    handleTypingStop
+    handleTypingStop,
+   
   } = useChat();
 
 
@@ -115,15 +116,14 @@ function MainContent() {
             onDisconnect={disconnectPartner}
             onNext={nextPartner}
             onToggleAutoConnect={toggleAutoConnect}
-            // onBack={() => {
-            //     console.log('Disconnecting from partner...');
-            //  if (partner) {
-            //     disconnectPartner();
-            //   }
-            //   setSearching(false);
-            //   setCurrentScreen('home');
-        
-            // }}
+
+                 mode={currentChatMode}
+                  onBack={() => {
+                setSearching(false);
+                setCurrentScreen('home');
+              }}
+              onScanQR={handleQRScan}
+                 searchTime={searchTime}
 
                 disconnectPartner={disconnectPartner}
                 setCurrentScreen={setCurrentScreen}
@@ -144,11 +144,7 @@ function MainContent() {
             onToggleAutoConnect={toggleAutoConnect}
             disconnectPartner={disconnectPartner}
                 setCurrentScreen={setCurrentScreen}
-            
-            // onBack={() => {
-            //   disconnectPartner();
-            //   setCurrentScreen('home');
-            // }}
+
             onTyping={handleTyping}
           />
         );
