@@ -354,7 +354,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useChat } from '../../context/ChatContext';
 import Header from './components/Header';
-import ChatArea from './components/ChatArea';
+import ChatArea from './components/ChatArea11';
 import MessageInput from './components/MessageInput';
 import SettingsPanel from './components/SettingsPanel';
 import QRScanner from './components/QRScanner';
