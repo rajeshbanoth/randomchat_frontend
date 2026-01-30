@@ -1,9 +1,9 @@
 // src/MainContent.jsx
 import React from 'react';
 import { useChat } from './context/ChatContext';
-import HomeScreen from './components/HomeScreen';
-import TextChatScreen from './components/TextChatScreen';
-import VideoChatScreen from './components/VideoChatScreen';
+import HomeScreen from './components/HomeScreen/HomeScreen';
+import TextChatScreen from './components/TextChatScreen/TextChatScreen';
+import VideoChatScreen from './components/VideoCallScreen/VideoCallScreen';
 import SearchingScreen from './components/SearchingScreen';
 import UserProfileScreen from './components/UserProfileScreen';
 import { FaCheckCircle, FaExclamationCircle, FaExclamationTriangle, FaInfoCircle, FaUsers, FaCrown,FaSearch } from 'react-icons/fa';
@@ -38,6 +38,9 @@ function MainContent() {
     handleTypingStart,
     handleTypingStop
   } = useChat();
+
+
+   
 
   const toggleAutoConnect = () => {
     setAutoConnect(!autoConnect);
