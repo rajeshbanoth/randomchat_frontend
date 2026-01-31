@@ -201,12 +201,14 @@ const VideoChatScreen = () => {
   // Placeholder state
   const [usingPlaceholder, setUsingPlaceholder] = useState(false);
   
-  // Layout state
-  const [videoLayout, setVideoLayout] = useState('pip'); // 'pip', 'grid', 'focus-remote', 'focus-local'
+  // Layout state - FIXED: Added comprehensive layout types
+  const [videoLayout, setVideoLayout] = useState('pip'); // 'pip', 'grid-horizontal', 'grid-vertical', 'side-by-side', 'stack', 'focus-remote', 'focus-local', 'cinema', 'speaker-view'
   const [isMobile, setIsMobile] = useState(false);
+  const [isChangingLayout, setIsChangingLayout] = useState(false);
   
   // Refs for layout management
   const layoutChangeRef = useRef(false);
+  const videoContainerRef = useRef(null);
   
   const callTimerRef = useRef(null);
   const controlsTimeoutRef = useRef(null);
@@ -227,7 +229,15 @@ const VideoChatScreen = () => {
   // Check screen size for responsive layout
   useEffect(() => {
     const checkScreenSize = () => {
-      setIsMobile(window.innerWidth < 768);
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      
+      // Auto-select layout based on screen size
+      if (mobile) {
+        handleLayoutChange('grid-vertical', false); // Vertical grid for mobile
+      } else {
+        handleLayoutChange('side-by-side', false); // Side-by-side for PC
+      }
     };
     
     checkScreenSize();
@@ -236,64 +246,55 @@ const VideoChatScreen = () => {
     return () => window.removeEventListener('resize', checkScreenSize);
   }, []);
 
-  // Auto-select layout based on screen size
-  useEffect(() => {
-    if (isMobile) {
-      setVideoLayout('grid');
-    } else {
-      setVideoLayout('pip');
-    }
-  }, [isMobile]);
-
-  // ==================== CRITICAL FIX: Ensure video elements stay connected ====================
-
-  // Fix for local video not showing when changing layout
-  useEffect(() => {
-    // Reattach local stream to video element after layout change
-    if (hasLocalStream && localVideoRef.current && localStreamRef.current) {
-      const currentSrc = localVideoRef.current.srcObject;
-      const expectedSrc = isScreenSharing && screenStreamRef.current 
-        ? screenStreamRef.current 
-        : localStreamRef.current;
+  // ==================== CRITICAL FIX: Enhanced layout change handler ====================
+  const handleLayoutChange = async (newLayout, animate = true) => {
+    console.log(`🔄 Changing layout from ${videoLayout} to ${newLayout}`);
+    
+    if (newLayout === videoLayout) return;
+    
+    if (animate) {
+      setIsChangingLayout(true);
+      layoutChangeRef.current = true;
       
-      if (currentSrc !== expectedSrc) {
-        console.log('🎬 Reattaching local stream after layout change');
-        localVideoRef.current.srcObject = expectedSrc;
+      // Add a CSS class for smooth transition
+      if (videoContainerRef.current) {
+        videoContainerRef.current.classList.add('layout-transitioning');
       }
     }
     
-    // Reattach remote stream if needed
-    if (remoteVideoRef.current && remoteStreamRef.current) {
-      const currentSrc = remoteVideoRef.current.srcObject;
-      if (currentSrc !== remoteStreamRef.current) {
-        console.log('🎬 Reattaching remote stream after layout change');
-        remoteVideoRef.current.srcObject = remoteStreamRef.current;
-      }
-    }
-  }, [videoLayout, hasLocalStream, isScreenSharing]);
-
-  // Force stream reattachment when layout changes
-  const handleLayoutChange = (newLayout) => {
-    console.log(`🔄 Changing layout from ${videoLayout} to ${newLayout}`);
-    layoutChangeRef.current = true;
+    // Change layout first
     setVideoLayout(newLayout);
     
-    // Force reattachment after a short delay to ensure DOM is updated
-    setTimeout(() => {
-      if (hasLocalStream && localVideoRef.current && localStreamRef.current) {
-        console.log('🔧 Forcing local stream reattachment');
-        localVideoRef.current.srcObject = isScreenSharing && screenStreamRef.current 
-          ? screenStreamRef.current 
-          : localStreamRef.current;
-      }
-      
-      if (remoteVideoRef.current && remoteStreamRef.current) {
-        console.log('🔧 Forcing remote stream reattachment');
-        remoteVideoRef.current.srcObject = remoteStreamRef.current;
-      }
-      
-      layoutChangeRef.current = false;
-    }, 100);
+    // Wait for React to update DOM
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    // Force reattachment of streams
+    if (remoteStreamRef.current && remoteVideoRef.current) {
+      console.log('🎬 Reattaching remote stream for layout change');
+      remoteVideoRef.current.srcObject = remoteStreamRef.current;
+      remoteVideoRef.current.play().catch(e => console.log('Remote play after layout:', e));
+    }
+    
+    if (localStreamRef.current && localVideoRef.current) {
+      console.log('🎬 Reattaching local stream for layout change');
+      const currentStream = isScreenSharing && screenStreamRef.current 
+        ? screenStreamRef.current 
+        : localStreamRef.current;
+      localVideoRef.current.srcObject = currentStream;
+      localVideoRef.current.play().catch(e => console.log('Local play after layout:', e));
+    }
+    
+    layoutChangeRef.current = false;
+    
+    // Remove transition class and reset state
+    if (animate) {
+      setTimeout(() => {
+        setIsChangingLayout(false);
+        if (videoContainerRef.current) {
+          videoContainerRef.current.classList.remove('layout-transitioning');
+        }
+      }, 300);
+    }
   };
 
   // ==================== WEBRTC FUNCTIONS ====================
@@ -455,6 +456,8 @@ const VideoChatScreen = () => {
           
           if (localVideoRef.current) {
             localVideoRef.current.srcObject = placeholder;
+            // Ensure it plays
+            localVideoRef.current.play().catch(e => console.log('Placeholder play error:', e));
           }
           
           setIsVideoEnabled(true);
@@ -488,6 +491,8 @@ const VideoChatScreen = () => {
         
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
+          // Ensure it plays
+          localVideoRef.current.play().catch(e => console.log('Camera stream play error:', e));
         }
         
         // Check track states
@@ -570,6 +575,8 @@ const VideoChatScreen = () => {
       
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = placeholder;
+        // Ensure it plays
+        localVideoRef.current.play().catch(e => console.log('Placeholder play error:', e));
       }
       
       setIsVideoEnabled(true);
@@ -1249,6 +1256,7 @@ const VideoChatScreen = () => {
           
           if (localVideoRef.current) {
             localVideoRef.current.srcObject = screenStream;
+            localVideoRef.current.play().catch(e => console.log('Screen share play error:', e));
           }
           
           setIsScreenSharing(true);
@@ -1269,6 +1277,7 @@ const VideoChatScreen = () => {
           
           if (localVideoRef.current) {
             localVideoRef.current.srcObject = cameraStream;
+            localVideoRef.current.play().catch(e => console.log('Camera reattach play error:', e));
           }
           
           screenStreamRef.current?.getTracks().forEach(track => track.stop());
@@ -1363,6 +1372,103 @@ const VideoChatScreen = () => {
     }, 500);
   };
 
+  // ==================== DEBUG FUNCTIONS ====================
+
+  const debugLayoutInfo = () => {
+    console.log('=== LAYOUT DEBUG ===');
+    console.log('Current layout:', videoLayout);
+    console.log('Local video:', {
+      element: !!localVideoRef.current,
+      srcObject: localVideoRef.current?.srcObject,
+      paused: localVideoRef.current?.paused,
+      readyState: localVideoRef.current?.readyState
+    });
+    console.log('Remote video:', {
+      element: !!remoteVideoRef.current,
+      srcObject: remoteVideoRef.current?.srcObject,
+      paused: remoteVideoRef.current?.paused,
+      readyState: remoteVideoRef.current?.readyState
+    });
+    console.log('Streams:', {
+      localStream: !!localStreamRef.current,
+      remoteStream: !!remoteStreamRef.current,
+      screenStream: !!screenStreamRef.current
+    });
+    console.log('===================');
+  };
+
+  const debugStreamInfo = () => {
+    console.log('=== STREAM DEBUG INFO ===');
+    
+    // Check if streams are properly stored
+    console.log('Stored Streams:', {
+      localStreamRef: localStreamRef.current,
+      remoteStreamRef: remoteStreamRef.current,
+      screenStreamRef: screenStreamRef.current
+    });
+    
+    // Check tracks in each stream
+    if (localStreamRef.current) {
+      const tracks = localStreamRef.current.getTracks();
+      console.log('Local Stream Tracks:', tracks.length);
+      tracks.forEach((track, i) => {
+        console.log(`  Track ${i}:`, {
+          kind: track.kind,
+          id: track.id?.substring(0, 8),
+          enabled: track.enabled,
+          readyState: track.readyState,
+          label: track.label
+        });
+      });
+    }
+    
+    if (remoteStreamRef.current) {
+      const tracks = remoteStreamRef.current.getTracks();
+      console.log('Remote Stream Tracks:', tracks.length);
+      tracks.forEach((track, i) => {
+        console.log(`  Track ${i}:`, {
+          kind: track.kind,
+          id: track.id?.substring(0, 8),
+          enabled: track.enabled,
+          readyState: track.readyState,
+          label: track.label
+        });
+      });
+    }
+    
+    // Check video elements
+    console.log('Video Elements:', {
+      localVideo: {
+        element: !!localVideoRef.current,
+        srcObjectType: localVideoRef.current?.srcObject?.constructor.name,
+        srcObjectTracks: localVideoRef.current?.srcObject?.getTracks()?.length
+      },
+      remoteVideo: {
+        element: !!remoteVideoRef.current,
+        srcObjectType: remoteVideoRef.current?.srcObject?.constructor.name,
+        srcObjectTracks: remoteVideoRef.current?.srcObject?.getTracks()?.length
+      }
+    });
+    
+    console.log('Current Layout:', videoLayout);
+    console.log('========================');
+  };
+
+  const testAllLayouts = async () => {
+    const layouts = [
+      'pip', 'grid-horizontal', 'grid-vertical', 'side-by-side', 
+      'stack', 'focus-remote', 'focus-local', 'cinema', 'speaker-view'
+    ];
+    
+    for (let i = 0; i < layouts.length; i++) {
+      const layout = layouts[i];
+      console.log(`\n=== TESTING LAYOUT: ${layout} ===`);
+      handleLayoutChange(layout, false);
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+      debugLayoutInfo();
+    }
+  };
+
   const checkStreamState = () => {
     console.log('=== STREAM STATE DEBUG ===');
     
@@ -1390,29 +1496,6 @@ const VideoChatScreen = () => {
         connectionState: pc.connectionState,
         iceConnectionState: pc.iceConnectionState,
         iceGatheringState: pc.iceGatheringState
-      });
-      
-      const receivers = pc.getReceivers();
-      console.log('🎧 Receivers:', receivers.length);
-      receivers.forEach((receiver, idx) => {
-        console.log(`  Receiver ${idx}:`, {
-          trackKind: receiver.track?.kind,
-          trackId: receiver.track?.id?.substring(0, 8),
-          trackEnabled: receiver.track?.enabled,
-          trackState: receiver.track?.readyState
-        });
-      });
-      
-      const transceivers = pc.getTransceivers();
-      console.log('🔄 Transceivers:', transceivers.length);
-      transceivers.forEach((transceiver, idx) => {
-        console.log(`  Transceiver ${idx}:`, {
-          mid: transceiver.mid,
-          direction: transceiver.direction,
-          currentDirection: transceiver.currentDirection,
-          receiverTrack: transceiver.receiver.track?.kind,
-          senderTrack: transceiver.sender.track?.kind
-        });
       });
     }
     
@@ -1569,170 +1652,7 @@ const VideoChatScreen = () => {
     return null;
   };
 
-  // ==================== RESPONSIVE VIDEO LAYOUTS ====================
-
-  const renderVideoLayout = () => {
-    switch(videoLayout) {
-      case 'grid':
-        // Mobile-friendly grid layout
-        return (
-          <div className="grid grid-cols-1 grid-rows-2 gap-2 p-2 md:grid-cols-2 md:grid-rows-1 h-full">
-            {/* Remote Video */}
-            <div className={`relative rounded-lg overflow-hidden ${!remoteStream ? 'bg-gradient-to-br from-gray-900 to-black' : ''}`}>
-              <video
-                ref={remoteVideoRef}
-                key={`remote-${videoLayout}`}
-                autoPlay
-                playsInline
-                className="w-full h-full object-cover"
-                onLoadedMetadata={() => console.log('🎥 Remote video metadata loaded')}
-              />
-              {renderVideoOverlay('remote')}
-            </div>
-            
-            {/* Local Video */}
-            {(hasLocalStream || usingPlaceholder) && (
-              <div className={`relative rounded-lg overflow-hidden border-2 ${usingPlaceholder ? 'border-purple-500/50' : 'border-gray-700/50'} bg-black shadow-lg`}>
-                <video
-                  ref={localVideoRef}
-                  key={`local-${videoLayout}`}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="w-full h-full object-cover"
-                  onLoadedMetadata={() => console.log('🎥 Local video metadata loaded')}
-                />
-                {renderVideoOverlay('local')}
-                {usingPlaceholder && (
-                  <div className="absolute top-2 right-2 px-2 py-1 bg-purple-500/80 backdrop-blur-sm rounded text-xs">
-                    Placeholder
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        );
-        
-      case 'focus-remote':
-        // Focus on remote video, local video as small pip
-        return (
-          <>
-            {/* Remote Video - Main */}
-            <div className={`absolute inset-0 ${!remoteStream ? 'bg-gradient-to-br from-gray-900 to-black' : ''}`}>
-              <video
-                ref={remoteVideoRef}
-                key={`remote-${videoLayout}`}
-                autoPlay
-                playsInline
-                className="w-full h-full object-cover"
-                onLoadedMetadata={() => console.log('🎥 Remote video metadata loaded')}
-              />
-              {renderVideoOverlay('remote')}
-            </div>
-            
-            {/* Local Video - PIP */}
-            {(hasLocalStream || usingPlaceholder) && (
-              <div className={`absolute ${isMobile ? 'top-4 right-4 w-32 h-24' : 'top-6 right-6 w-56 h-42'} rounded-lg overflow-hidden border-2 ${usingPlaceholder ? 'border-purple-500/50' : 'border-gray-700/50'} bg-black shadow-2xl transition-all duration-300`}>
-                <video
-                  ref={localVideoRef}
-                  key={`local-${videoLayout}`}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="w-full h-full object-cover"
-                  onLoadedMetadata={() => console.log('🎥 Local video metadata loaded')}
-                />
-                {renderVideoOverlay('local', true)}
-                {usingPlaceholder && (
-                  <div className="absolute top-1 right-1 px-1 py-0.5 bg-purple-500/80 backdrop-blur-sm rounded text-[10px]">
-                    PH
-                  </div>
-                )}
-              </div>
-            )}
-          </>
-        );
-        
-      case 'focus-local':
-        // Focus on local video, remote video as small pip
-        return (
-          <>
-            {/* Local Video - Main */}
-            <div className={`absolute inset-0`}>
-              <video
-                ref={localVideoRef}
-                key={`local-${videoLayout}`}
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-full object-cover"
-                onLoadedMetadata={() => console.log('🎥 Local video metadata loaded')}
-              />
-              {renderVideoOverlay('local')}
-              {usingPlaceholder && (
-                <div className="absolute top-4 left-4 px-3 py-1.5 bg-gradient-to-r from-purple-500/90 to-pink-500/90 backdrop-blur-sm rounded-lg font-medium">
-                  Placeholder Mode
-                </div>
-              )}
-            </div>
-            
-            {/* Remote Video - PIP */}
-            <div className={`absolute ${isMobile ? 'top-4 left-4 w-32 h-24' : 'top-6 left-6 w-56 h-42'} rounded-lg overflow-hidden border-2 border-gray-700/50 bg-black shadow-2xl transition-all duration-300`}>
-              <video
-                ref={remoteVideoRef}
-                key={`remote-${videoLayout}`}
-                autoPlay
-                playsInline
-                className="w-full h-full object-cover"
-                onLoadedMetadata={() => console.log('🎥 Remote video metadata loaded')}
-              />
-              {renderVideoOverlay('remote', true)}
-            </div>
-          </>
-        );
-        
-      case 'pip':
-      default:
-        // Default Picture-in-Picture (remote full, local pip)
-        return (
-          <>
-            {/* Remote Video - Full Screen */}
-            <div className={`absolute inset-0 ${!remoteStream ? 'bg-gradient-to-br from-gray-900 to-black' : ''}`}>
-              <video
-                ref={remoteVideoRef}
-                key={`remote-${videoLayout}`}
-                autoPlay
-                playsInline
-                className="w-full h-full object-cover"
-                onLoadedMetadata={() => console.log('🎥 Remote video metadata loaded')}
-              />
-              {renderVideoOverlay('remote')}
-            </div>
-            
-            {/* Local Video - PIP */}
-            {(hasLocalStream || usingPlaceholder) && (
-              <div className={`absolute ${isMobile ? 'top-4 right-4 w-40 h-30' : 'top-8 right-8 w-72 h-54'} rounded-xl overflow-hidden border-2 ${usingPlaceholder ? 'border-purple-500/50' : 'border-gray-700/50'} bg-black shadow-2xl transition-all duration-300`}>
-                <video
-                  ref={localVideoRef}
-                  key={`local-${videoLayout}`}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="w-full h-full object-cover"
-                  onLoadedMetadata={() => console.log('🎥 Local video metadata loaded')}
-                />
-                {renderVideoOverlay('local', true)}
-                {usingPlaceholder && (
-                  <div className="absolute top-2 right-2 px-2 py-1 bg-purple-500/80 backdrop-blur-sm rounded text-xs">
-                    Placeholder
-                  </div>
-                )}
-              </div>
-            )}
-          </>
-        );
-    }
-  };
+  // ==================== COMPREHENSIVE VIDEO LAYOUTS WITH SMOOTH ANIMATIONS ====================
 
   const renderVideoOverlay = (type, isSmall = false) => {
     if (type === 'remote') {
@@ -1759,16 +1679,16 @@ const VideoChatScreen = () => {
       
       // Status indicators for remote video
       return (
-        <div className="absolute bottom-2 left-2 flex items-center space-x-2">
+        <div className="absolute bottom-3 left-3 flex items-center space-x-2">
           {isRemoteVideoMuted && (
-            <div className="px-2 py-1 bg-red-500/80 backdrop-blur-sm rounded text-xs flex items-center">
-              <FaVideoSlash className="mr-1" />
+            <div className="px-3 py-1.5 bg-red-500/80 backdrop-blur-sm rounded-lg text-sm flex items-center shadow-lg">
+              <FaVideoSlash className="mr-2" />
               <span>Video Off</span>
             </div>
           )}
           {isRemoteAudioMuted && (
-            <div className="px-2 py-1 bg-red-500/80 backdrop-blur-sm rounded text-xs flex items-center">
-              <FaMicrophoneSlash className="mr-1" />
+            <div className="px-3 py-1.5 bg-red-500/80 backdrop-blur-sm rounded-lg text-sm flex items-center shadow-lg">
+              <FaMicrophoneSlash className="mr-2" />
               <span>Audio Off</span>
             </div>
           )}
@@ -1778,23 +1698,23 @@ const VideoChatScreen = () => {
     
     if (type === 'local') {
       return (
-        <div className="absolute bottom-2 left-2 flex items-center space-x-2">
+        <div className="absolute bottom-3 left-3 flex items-center space-x-2">
           {!isVideoEnabled && (
-            <div className="px-2 py-1 bg-red-500/80 backdrop-blur-sm rounded text-xs flex items-center">
-              <FaVideoSlash className="mr-1" />
-              {!isSmall && <span>Cam Off</span>}
+            <div className="px-3 py-1.5 bg-red-500/80 backdrop-blur-sm rounded-lg text-sm flex items-center shadow-lg">
+              <FaVideoSlash className="mr-2" />
+              {!isSmall && <span>Camera Off</span>}
             </div>
           )}
           {!isAudioEnabled && (
-            <div className="px-2 py-1 bg-red-500/80 backdrop-blur-sm rounded text-xs flex items-center">
-              <FaMicrophoneSlash className="mr-1" />
+            <div className="px-3 py-1.5 bg-red-500/80 backdrop-blur-sm rounded-lg text-sm flex items-center shadow-lg">
+              <FaMicrophoneSlash className="mr-2" />
               {!isSmall && <span>Mic Off</span>}
             </div>
           )}
           {isScreenSharing && (
-            <div className="px-2 py-1 bg-blue-500/80 backdrop-blur-sm rounded text-xs flex items-center">
-              <MdScreenShare className="mr-1" />
-              {!isSmall && <span>Screen</span>}
+            <div className="px-3 py-1.5 bg-blue-500/80 backdrop-blur-sm rounded-lg text-sm flex items-center shadow-lg">
+              <MdScreenShare className="mr-2" />
+              {!isSmall && <span>Screen Sharing</span>}
             </div>
           )}
         </div>
@@ -1802,6 +1722,202 @@ const VideoChatScreen = () => {
     }
     
     return null;
+  };
+
+  const renderVideoLayout = () => {
+    const layoutAnimations = {
+      pip: "animate-fade-in",
+      'grid-horizontal': "animate-slide-in-up",
+      'grid-vertical': "animate-slide-in-left",
+      'side-by-side': "animate-scale-in",
+      stack: "animate-fade-in",
+      'focus-remote': "animate-slide-in-right",
+      'focus-local': "animate-slide-in-left",
+      cinema: "animate-fade-in",
+      'speaker-view': "animate-slide-in-up"
+    };
+    
+    const containerClass = `absolute inset-0 transition-all duration-500 ease-in-out ${
+      isChangingLayout ? 'opacity-90 scale-95 blur-sm' : 'opacity-100 scale-100 blur-0'
+    }`;
+    
+    // Common video props
+    const localVideoProps = {
+      ref: localVideoRef,
+      autoPlay: true,
+      playsInline: true,
+      muted: true,
+      className: "w-full h-full object-cover",
+      onLoadedMetadata: () => console.log('🎥 Local video metadata loaded'),
+      onCanPlay: () => console.log('✅ Local video can play'),
+      onError: (e) => console.error('Local video error:', e)
+    };
+    
+    const remoteVideoProps = {
+      ref: remoteVideoRef,
+      autoPlay: true,
+      playsInline: true,
+      className: "w-full h-full object-cover",
+      onLoadedMetadata: () => console.log('🎥 Remote video metadata loaded'),
+      onCanPlay: () => console.log('✅ Remote video can play'),
+      onError: (e) => console.error('Remote video error:', e)
+    };
+    
+    switch(videoLayout) {
+      case 'grid-horizontal':
+        return (
+          <div ref={videoContainerRef} className={`flex ${isMobile ? 'flex-col' : 'flex-row'} h-full gap-2 p-2 ${layoutAnimations['grid-horizontal']} ${containerClass}`}>
+            {/* Remote Video */}
+            <div className={`flex-1 relative rounded-2xl overflow-hidden ${!remoteStream ? 'bg-gradient-to-br from-gray-900 to-black' : ''}`}>
+              <video {...remoteVideoProps} />
+              {renderVideoOverlay('remote')}
+            </div>
+            
+            {/* Local Video */}
+            <div className={`flex-1 relative rounded-2xl overflow-hidden border-2 ${usingPlaceholder ? 'border-purple-500/50' : 'border-gray-700/50'}`}>
+              <video {...localVideoProps} />
+              {renderVideoOverlay('local')}
+            </div>
+          </div>
+        );
+        
+      case 'grid-vertical':
+        return (
+          <div ref={videoContainerRef} className={`flex flex-col h-full gap-2 p-2 ${layoutAnimations['grid-vertical']} ${containerClass}`}>
+            {/* Remote Video */}
+            <div className={`flex-1 relative rounded-2xl overflow-hidden ${!remoteStream ? 'bg-gradient-to-br from-gray-900 to-black' : ''}`}>
+              <video {...remoteVideoProps} />
+              {renderVideoOverlay('remote')}
+            </div>
+            
+            {/* Local Video */}
+            <div className={`flex-1 relative rounded-2xl overflow-hidden border-2 ${usingPlaceholder ? 'border-purple-500/50' : 'border-gray-700/50'}`}>
+              <video {...localVideoProps} />
+              {renderVideoOverlay('local')}
+            </div>
+          </div>
+        );
+        
+      case 'side-by-side':
+        return (
+          <div ref={videoContainerRef} className={`flex ${isMobile ? 'flex-col' : 'flex-row'} h-full gap-3 p-3 ${layoutAnimations['side-by-side']} ${containerClass}`}>
+            {/* Remote Video - 70% */}
+            <div className={`${isMobile ? 'h-2/3' : 'w-[70%]'} relative rounded-2xl overflow-hidden ${!remoteStream ? 'bg-gradient-to-br from-gray-900 to-black' : ''}`}>
+              <video {...remoteVideoProps} />
+              {renderVideoOverlay('remote')}
+            </div>
+            
+            {/* Local Video - 30% */}
+            <div className={`${isMobile ? 'h-1/3' : 'w-[30%]'} relative rounded-2xl overflow-hidden border-2 ${usingPlaceholder ? 'border-purple-500/50' : 'border-gray-700/50'}`}>
+              <video {...localVideoProps} />
+              {renderVideoOverlay('local')}
+            </div>
+          </div>
+        );
+        
+      case 'stack':
+        return (
+          <div ref={videoContainerRef} className={`relative h-full ${layoutAnimations.stack} ${containerClass}`}>
+            {/* Remote Video - Bottom Layer */}
+            <div className={`absolute inset-0 ${!remoteStream ? 'bg-gradient-to-br from-gray-900 to-black' : ''}`}>
+              <video {...remoteVideoProps} />
+              {renderVideoOverlay('remote')}
+            </div>
+            
+            {/* Local Video - Top Layer (Smaller) */}
+            <div className={`absolute ${isMobile ? 'bottom-4 left-4 w-40 h-32' : 'bottom-8 left-8 w-80 h-60'} rounded-2xl overflow-hidden border-2 ${usingPlaceholder ? 'border-purple-500/50' : 'border-gray-700/50'}`}>
+              <video {...localVideoProps} />
+              {renderVideoOverlay('local', true)}
+            </div>
+          </div>
+        );
+        
+      case 'cinema':
+        return (
+          <div ref={videoContainerRef} className={`relative h-full ${layoutAnimations.cinema} ${containerClass}`}>
+            {/* Remote Video - Full Screen with Black Bars */}
+            <div className={`absolute inset-0 ${!remoteStream ? 'bg-gradient-to-br from-gray-900 to-black' : 'bg-black'}`}>
+              <video {...remoteVideoProps} className="w-full h-full object-contain" />
+              {renderVideoOverlay('remote')}
+            </div>
+            
+            {/* Local Video - Small Corner */}
+            <div className={`absolute ${isMobile ? 'top-4 right-4 w-32 h-24' : 'top-6 right-6 w-48 h-36'} rounded-xl overflow-hidden border-2 ${usingPlaceholder ? 'border-purple-500/50' : 'border-gray-700/50'}`}>
+              <video {...localVideoProps} />
+              {renderVideoOverlay('local', true)}
+            </div>
+          </div>
+        );
+        
+      case 'speaker-view':
+        return (
+          <div ref={videoContainerRef} className={`relative h-full ${layoutAnimations['speaker-view']} ${containerClass}`}>
+            {/* Main Speaker (Remote) */}
+            <div className={`absolute ${isMobile ? 'inset-0' : 'inset-x-0 top-0 h-3/4'} ${!remoteStream ? 'bg-gradient-to-br from-gray-900 to-black' : ''}`}>
+              <video {...remoteVideoProps} />
+              {renderVideoOverlay('remote')}
+            </div>
+            
+            {/* Local Video - Smaller at bottom */}
+            <div className={`absolute ${isMobile ? 'bottom-4 left-4 right-4 h-32' : 'bottom-8 left-1/4 right-1/4 h-1/4'} rounded-xl overflow-hidden border-2 ${usingPlaceholder ? 'border-purple-500/50' : 'border-gray-700/50'}`}>
+              <video {...localVideoProps} />
+              {renderVideoOverlay('local', true)}
+            </div>
+          </div>
+        );
+        
+      case 'focus-remote':
+        return (
+          <div ref={videoContainerRef} className={`relative h-full ${layoutAnimations['focus-remote']} ${containerClass}`}>
+            {/* Remote Video - Main */}
+            <div className={`absolute inset-0 ${!remoteStream ? 'bg-gradient-to-br from-gray-900 to-black' : ''}`}>
+              <video {...remoteVideoProps} />
+              {renderVideoOverlay('remote')}
+            </div>
+            
+            {/* Local Video - PIP */}
+            <div className={`absolute ${isMobile ? 'top-4 right-4 w-32 h-24' : 'top-6 right-6 w-56 h-42'} rounded-xl overflow-hidden border-2 ${usingPlaceholder ? 'border-purple-500/50' : 'border-gray-700/50'}`}>
+              <video {...localVideoProps} />
+              {renderVideoOverlay('local', true)}
+            </div>
+          </div>
+        );
+        
+      case 'focus-local':
+        return (
+          <div ref={videoContainerRef} className={`relative h-full ${layoutAnimations['focus-local']} ${containerClass}`}>
+            {/* Local Video - Main */}
+            <div className={`absolute inset-0`}>
+              <video {...localVideoProps} />
+              {renderVideoOverlay('local')}
+            </div>
+            
+            {/* Remote Video - PIP */}
+            <div className={`absolute ${isMobile ? 'top-4 left-4 w-32 h-24' : 'top-6 left-6 w-56 h-42'} rounded-xl overflow-hidden border-2 border-gray-700/50`}>
+              <video {...remoteVideoProps} />
+              {renderVideoOverlay('remote', true)}
+            </div>
+          </div>
+        );
+        
+      case 'pip':
+      default:
+        return (
+          <div ref={videoContainerRef} className={`relative h-full ${layoutAnimations.pip} ${containerClass}`}>
+            {/* Remote Video - Full Screen */}
+            <div className={`absolute inset-0 ${!remoteStream ? 'bg-gradient-to-br from-gray-900 to-black' : ''}`}>
+              <video {...remoteVideoProps} />
+              {renderVideoOverlay('remote')}
+            </div>
+            
+            {/* Local Video - PIP */}
+            <div className={`absolute ${isMobile ? 'top-4 right-4 w-40 h-30' : 'top-8 right-8 w-72 h-54'} rounded-2xl overflow-hidden border-2 ${usingPlaceholder ? 'border-purple-500/50' : 'border-gray-700/50'}`}>
+              <video {...localVideoProps} />
+              {renderVideoOverlay('local', true)}
+            </div>
+          </div>
+        );
+    }
   };
 
   // ==================== RENDER ====================
@@ -1933,29 +2049,20 @@ const VideoChatScreen = () => {
           </div>
           
           <div className="flex items-center space-x-1 sm:space-x-2">
-            {/* Layout Switcher */}
+            {/* Layout Switcher - Enhanced with more options */}
             <div className="hidden sm:flex items-center space-x-1 bg-gray-800/30 rounded-lg p-1 backdrop-blur-sm">
-              <button
-                onClick={() => handleLayoutChange('pip')}
-                className={`p-1.5 rounded transition-all duration-300 ${videoLayout === 'pip' ? 'bg-blue-500/30' : 'hover:bg-gray-700/30'}`}
-                title="Picture-in-Picture"
-              >
-                <div className="w-4 h-3 border border-gray-400 rounded relative">
-                  <div className="absolute top-0 right-0 w-2 h-2 border border-gray-400 rounded-sm"></div>
-                </div>
-              </button>
-              <button
-                onClick={() => handleLayoutChange('grid')}
-                className={`p-1.5 rounded transition-all duration-300 ${videoLayout === 'grid' ? 'bg-blue-500/30' : 'hover:bg-gray-700/30'}`}
-                title="Grid View"
-              >
-                <div className="w-4 h-3 grid grid-cols-2 gap-0.5">
-                  <div className="w-1.5 h-1.5 bg-gray-400 rounded-sm"></div>
-                  <div className="w-1.5 h-1.5 bg-gray-400 rounded-sm"></div>
-                  <div className="w-1.5 h-1.5 bg-gray-400 rounded-sm"></div>
-                  <div className="w-1.5 h-1.5 bg-gray-400 rounded-sm"></div>
-                </div>
-              </button>
+              {['pip', 'grid-horizontal', 'grid-vertical', 'side-by-side', 'stack', 'cinema', 'speaker-view', 'focus-remote', 'focus-local'].map((layout) => (
+                <button
+                  key={layout}
+                  onClick={() => handleLayoutChange(layout)}
+                  className={`p-1.5 rounded transition-all duration-300 ${videoLayout === layout ? 'bg-blue-500/30 border border-blue-500/50' : 'hover:bg-gray-700/30 border border-transparent'}`}
+                  title={layout.replace('-', ' ')}
+                >
+                  <div className="w-4 h-3">
+                    {getLayoutIcon(layout)}
+                  </div>
+                </button>
+              ))}
             </div>
             
             {usingPlaceholder && (
@@ -2008,137 +2115,177 @@ const VideoChatScreen = () => {
         )}
       </div>
       
-      {/* Controls Bar */}
-      <div className={`relative p-4 sm:p-6 border-t border-gray-800/30 bg-gray-900/40 backdrop-blur-2xl transition-all duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
-        <div className="max-w-4xl mx-auto">
-          <div className="flex items-center justify-center space-x-3 sm:space-x-6">
-            {/* Toggle Video */}
-            <button
-              onClick={toggleVideo}
-              disabled={!hasLocalStream}
-              className={`p-3 sm:p-4 rounded-full transition-all duration-300 ${isVideoEnabled
-                ? 'bg-gradient-to-r from-blue-500/20 to-cyan-500/20 hover:from-blue-500/30 hover:to-cyan-500/30 text-blue-300'
-                : 'bg-gradient-to-r from-red-500/20 to-rose-500/20 hover:from-red-500/30 hover:to-rose-500/30 text-red-300'} backdrop-blur-sm border ${isVideoEnabled ? 'border-blue-500/30' : 'border-red-500/30'} group ${!hasLocalStream ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              {isVideoEnabled ? (
-                <FaVideo className="text-xl sm:text-2xl group-hover:scale-110 transition-transform" />
-              ) : (
-                <FaVideoSlash className="text-xl sm:text-2xl group-hover:scale-110 transition-transform" />
-              )}
-            </button>
-            
-            {/* Toggle Audio */}
-            <button
-              onClick={toggleAudio}
-              disabled={!hasLocalStream}
-              className={`p-3 sm:p-4 rounded-full transition-all duration-300 ${isAudioEnabled
-                ? 'bg-gradient-to-r from-green-500/20 to-emerald-500/20 hover:from-green-500/30 hover:to-emerald-500/30 text-green-300'
-                : 'bg-gradient-to-r from-red-500/20 to-rose-500/20 hover:from-red-500/30 hover:to-rose-500/30 text-red-300'} backdrop-blur-sm border ${isAudioEnabled ? 'border-green-500/30' : 'border-red-500/30'} group ${!hasLocalStream ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              {isAudioEnabled ? (
-                <FaMicrophone className="text-xl sm:text-2xl group-hover:scale-110 transition-transform" />
-              ) : (
-                <FaMicrophoneSlash className="text-xl sm:text-2xl group-hover:scale-110 transition-transform" />
-              )}
-            </button>
-            
-            {/* Screen Share */}
-            <button
-              onClick={toggleScreenShare}
-              className={`p-3 sm:p-4 rounded-full transition-all duration-300 ${isScreenSharing
-                ? 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 hover:from-purple-500/30 hover:to-pink-500/30 text-purple-300'
-                : 'bg-gradient-to-r from-gray-800/50 to-gray-900/50 hover:from-gray-700/50 hover:to-gray-800/50 text-gray-300'} backdrop-blur-sm border ${isScreenSharing ? 'border-purple-500/30' : 'border-gray-700/30'} group`}
-            >
-              {isScreenSharing ? (
-                <MdStopScreenShare className="text-xl sm:text-2xl group-hover:scale-110 transition-transform" />
-              ) : (
-                <MdScreenShare className="text-xl sm:text-2xl group-hover:scale-110 transition-transform" />
-              )}
-            </button>
-            
-            {/* End Call */}
-            <button
-              onClick={handleDisconnect}
-              className="p-4 sm:p-5 bg-gradient-to-r from-red-500 via-rose-500 to-pink-500 rounded-full hover:opacity-90 hover:scale-105 active:scale-95 transition-all duration-300 shadow-lg shadow-red-500/20 hover:shadow-xl hover:shadow-red-500/30 group"
-            >
-              <FaPhone className="text-xl sm:text-2xl group-hover:rotate-90 transition-transform" />
-            </button>
-            
-            {/* Next Partner */}
-            <button
-              onClick={handleNext}
-              className="p-3 sm:p-4 bg-gradient-to-r from-purple-500/20 to-pink-500/20 hover:from-purple-500/30 hover:to-pink-500/30 rounded-full transition-all duration-300 backdrop-blur-sm border border-purple-500/30 group"
-            >
-              <FaRandom className="text-xl sm:text-2xl group-hover:rotate-180 transition-transform" />
-            </button>
-            
-            {/* Fullscreen */}
-            <button
-              onClick={toggleFullscreen}
-              className="p-3 sm:p-4 bg-gradient-to-r from-gray-800/50 to-gray-900/50 hover:from-gray-700/50 hover:to-gray-800/50 rounded-full transition-all duration-300 backdrop-blur-sm border border-gray-700/30 group"
-            >
-              {isFullscreen ? (
-                <FaCompress className="text-xl sm:text-2xl group-hover:scale-110 transition-transform" />
-              ) : (
-                <FaExpand className="text-xl sm:text-2xl group-hover:scale-110 transition-transform" />
-              )}
-            </button>
-          </div>
-          
-          {/* Additional Controls */}
-          <div className="flex justify-center space-x-2 sm:space-x-4 mt-3 sm:mt-4">
-            <button
-              onClick={() => {
-                const debugState = debugGetState?.();
-                console.log('Debug State:', debugState);
-                console.log('Call Info:', callInfo);
-                checkStreamState();
-                addNotification('Debug info logged to console', 'info');
-              }}
-              className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-gray-800/30 to-gray-900/30 hover:from-gray-700/30 hover:to-gray-800/30 rounded-lg text-xs sm:text-sm transition-all duration-300 backdrop-blur-sm border border-gray-700/30"
-            >
-              <FaInfoCircle className="inline mr-1 sm:mr-2" />
-              <span className="hidden sm:inline">Debug</span>
-              <span className="sm:hidden">Debug</span>
-            </button>
-            
-            {callInfo.roomId && (
+      {/* Controls Bar - FIXED: Always at bottom without scrolling needed */}
+      <div className={`relative bg-gray-900/70 backdrop-blur-2xl transition-all duration-300 ${showControls ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+        {/* Main Controls - Large buttons for easy access */}
+        <div className="p-3 sm:p-4 border-t border-gray-800/30">
+          <div className="max-w-4xl mx-auto">
+            <div className="flex items-center justify-center space-x-2 sm:space-x-4">
+              {/* Toggle Video */}
               <button
-                onClick={copyRoomLink}
-                className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-blue-500/20 to-cyan-500/20 hover:from-blue-500/30 hover:to-cyan-500/30 rounded-lg text-xs sm:text-sm transition-all duration-300 backdrop-blur-sm border border-blue-500/30"
+                onClick={toggleVideo}
+                disabled={!hasLocalStream}
+                className={`p-3 sm:p-4 rounded-full transition-all duration-300 ${isVideoEnabled
+                  ? 'bg-gradient-to-r from-blue-500/20 to-cyan-500/20 hover:from-blue-500/30 hover:to-cyan-500/30 text-blue-300'
+                  : 'bg-gradient-to-r from-red-500/20 to-rose-500/20 hover:from-red-500/30 hover:to-rose-500/30 text-red-300'} backdrop-blur-sm border ${isVideoEnabled ? 'border-blue-500/30' : 'border-red-500/30'} group ${!hasLocalStream ? 'opacity-50 cursor-not-allowed' : ''}`}
+                title={isVideoEnabled ? "Turn off camera" : "Turn on camera"}
               >
-                <FaRegCopy className="inline mr-1 sm:mr-2" />
-                <span className="hidden sm:inline">Copy Link</span>
-                <span className="sm:hidden">Link</span>
+                {isVideoEnabled ? (
+                  <FaVideo className="text-xl sm:text-2xl group-hover:scale-110 transition-transform" />
+                ) : (
+                  <FaVideoSlash className="text-xl sm:text-2xl group-hover:scale-110 transition-transform" />
+                )}
               </button>
-            )}
-            
-            {!hasLocalStream && (
+              
+              {/* Toggle Audio */}
               <button
-                onClick={retryLocalStream}
-                className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-yellow-500/20 to-orange-500/20 hover:from-yellow-500/30 hover:to-orange-500/30 rounded-lg text-xs sm:text-sm transition-all duration-300 backdrop-blur-sm border border-yellow-500/30"
+                onClick={toggleAudio}
+                disabled={!hasLocalStream}
+                className={`p-3 sm:p-4 rounded-full transition-all duration-300 ${isAudioEnabled
+                  ? 'bg-gradient-to-r from-green-500/20 to-emerald-500/20 hover:from-green-500/30 hover:to-emerald-500/30 text-green-300'
+                  : 'bg-gradient-to-r from-red-500/20 to-rose-500/20 hover:from-red-500/30 hover:to-rose-500/30 text-red-300'} backdrop-blur-sm border ${isAudioEnabled ? 'border-green-500/30' : 'border-red-500/30'} group ${!hasLocalStream ? 'opacity-50 cursor-not-allowed' : ''}`}
+                title={isAudioEnabled ? "Mute microphone" : "Unmute microphone"}
+              >
+                {isAudioEnabled ? (
+                  <FaMicrophone className="text-xl sm:text-2xl group-hover:scale-110 transition-transform" />
+                ) : (
+                  <FaMicrophoneSlash className="text-xl sm:text-2xl group-hover:scale-110 transition-transform" />
+                )}
+              </button>
+              
+              {/* Screen Share */}
+              <button
+                onClick={toggleScreenShare}
+                className={`p-3 sm:p-4 rounded-full transition-all duration-300 ${isScreenSharing
+                  ? 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 hover:from-purple-500/30 hover:to-pink-500/30 text-purple-300'
+                  : 'bg-gradient-to-r from-gray-800/50 to-gray-900/50 hover:from-gray-700/50 hover:to-gray-800/50 text-gray-300'} backdrop-blur-sm border ${isScreenSharing ? 'border-purple-500/30' : 'border-gray-700/30'} group`}
+                title={isScreenSharing ? "Stop sharing" : "Share screen"}
+              >
+                {isScreenSharing ? (
+                  <MdStopScreenShare className="text-xl sm:text-2xl group-hover:scale-110 transition-transform" />
+                ) : (
+                  <MdScreenShare className="text-xl sm:text-2xl group-hover:scale-110 transition-transform" />
+                )}
+              </button>
+              
+              {/* End Call - Prominent */}
+              <button
+                onClick={handleDisconnect}
+                className="p-4 sm:p-5 bg-gradient-to-r from-red-500 via-rose-500 to-pink-500 rounded-full hover:opacity-90 hover:scale-105 active:scale-95 transition-all duration-300 shadow-lg shadow-red-500/20 hover:shadow-xl hover:shadow-red-500/30 group transform hover:rotate-6"
+                title="End call"
+              >
+                <FaPhone className="text-xl sm:text-2xl group-hover:rotate-90 transition-transform" />
+              </button>
+              
+              {/* Next Partner */}
+              <button
+                onClick={handleNext}
+                className="p-3 sm:p-4 bg-gradient-to-r from-purple-500/20 to-pink-500/20 hover:from-purple-500/30 hover:to-pink-500/30 rounded-full transition-all duration-300 backdrop-blur-sm border border-purple-500/30 group"
+                title="Next partner"
+              >
+                <FaRandom className="text-xl sm:text-2xl group-hover:rotate-180 transition-transform" />
+              </button>
+              
+              {/* Fullscreen */}
+              <button
+                onClick={toggleFullscreen}
+                className="p-3 sm:p-4 bg-gradient-to-r from-gray-800/50 to-gray-900/50 hover:from-gray-700/50 hover:to-gray-800/50 rounded-full transition-all duration-300 backdrop-blur-sm border border-gray-700/30 group"
+                title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+              >
+                {isFullscreen ? (
+                  <FaCompress className="text-xl sm:text-2xl group-hover:scale-110 transition-transform" />
+                ) : (
+                  <FaExpand className="text-xl sm:text-2xl group-hover:scale-110 transition-transform" />
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        {/* Additional Controls - Smaller secondary buttons */}
+        <div className="px-4 pb-2 sm:px-6 sm:pb-3 border-t border-gray-800/30 pt-2">
+          <div className="max-w-4xl mx-auto">
+            <div className="flex justify-center space-x-2 sm:space-x-4">
+              <button
+                onClick={debugLayoutInfo}
+                className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-gray-800/30 to-gray-900/30 hover:from-gray-700/30 hover:to-gray-800/30 rounded-lg text-xs sm:text-sm transition-all duration-300 backdrop-blur-sm border border-gray-700/30"
+                title="Debug layout information"
+              >
+                <FaInfoCircle className="inline mr-1 sm:mr-2" />
+                <span>Debug Layout</span>
+              </button>
+              
+              <button
+                onClick={debugStreamInfo}
+                className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-blue-500/20 to-cyan-500/20 hover:from-blue-500/30 hover:to-cyan-500/30 rounded-lg text-xs sm:text-sm transition-all duration-300 backdrop-blur-sm border border-blue-500/30"
+                title="Debug stream information"
+              >
+                <FaInfoCircle className="inline mr-1 sm:mr-2" />
+                <span>Debug Streams</span>
+              </button>
+              
+              <button
+                onClick={testAllLayouts}
+                className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-green-500/20 to-emerald-500/20 hover:from-green-500/30 hover:to-emerald-500/30 rounded-lg text-xs sm:text-sm transition-all duration-300 backdrop-blur-sm border border-green-500/30"
+                title="Test all layouts"
               >
                 <FaSync className="inline mr-1 sm:mr-2" />
-                <span className="hidden sm:inline">Retry Camera</span>
-                <span className="sm:hidden">Retry</span>
+                <span>Test Layouts</span>
               </button>
-            )}
-            
-            <button
-              onClick={createAndUsePlaceholder}
-              className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-purple-500/20 to-pink-500/20 hover:from-purple-500/30 hover:to-pink-500/30 rounded-lg text-xs sm:text-sm transition-all duration-300 backdrop-blur-sm border border-purple-500/30"
-            >
-              <FaCamera className="inline mr-1 sm:mr-2" />
-              <span className="hidden sm:inline">Use Placeholder</span>
-              <span className="sm:hidden">Placeholder</span>
-            </button>
+              
+              {callInfo.roomId && (
+                <button
+                  onClick={copyRoomLink}
+                  className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-blue-500/20 to-cyan-500/20 hover:from-blue-500/30 hover:to-cyan-500/30 rounded-lg text-xs sm:text-sm transition-all duration-300 backdrop-blur-sm border border-blue-500/30"
+                  title="Copy room link"
+                >
+                  <FaRegCopy className="inline mr-1 sm:mr-2" />
+                  <span>Copy Link</span>
+                </button>
+              )}
+              
+              {!hasLocalStream && (
+                <button
+                  onClick={retryLocalStream}
+                  className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-yellow-500/20 to-orange-500/20 hover:from-yellow-500/30 hover:to-orange-500/30 rounded-lg text-xs sm:text-sm transition-all duration-300 backdrop-blur-sm border border-yellow-500/30"
+                  title="Retry camera"
+                >
+                  <FaSync className="inline mr-1 sm:mr-2" />
+                  <span>Retry Camera</span>
+                </button>
+              )}
+              
+              <button
+                onClick={createAndUsePlaceholder}
+                className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-purple-500/20 to-pink-500/20 hover:from-purple-500/30 hover:to-pink-500/30 rounded-lg text-xs sm:text-sm transition-all duration-300 backdrop-blur-sm border border-purple-500/30"
+                title="Use placeholder video"
+              >
+                <FaCamera className="inline mr-1 sm:mr-2" />
+                <span>Placeholder</span>
+              </button>
+              
+              {/* Quick Layout Switcher for Mobile */}
+              {isMobile && (
+                <button
+                  onClick={() => {
+                    const layouts = ['pip', 'grid-horizontal', 'grid-vertical', 'side-by-side', 'stack'];
+                    const nextLayout = layouts[(layouts.indexOf(videoLayout) + 1) % layouts.length];
+                    handleLayoutChange(nextLayout);
+                  }}
+                  className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-indigo-500/20 to-blue-500/20 hover:from-indigo-500/30 hover:to-blue-500/30 rounded-lg text-xs sm:text-sm transition-all duration-300 backdrop-blur-sm border border-indigo-500/30"
+                  title="Switch layout"
+                >
+                  <span>Layout: {videoLayout.replace('-', ' ')}</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
       
       {/* Settings Panel */}
       {showSettings && (
-        <div className="absolute top-14 sm:top-16 right-4 sm:right-6 bg-gray-900/90 backdrop-blur-xl rounded-xl p-3 sm:p-4 border border-gray-700/50 shadow-2xl w-56 sm:w-64 z-50">
+        <div className="absolute top-14 sm:top-16 right-4 sm:right-6 bg-gray-900/90 backdrop-blur-xl rounded-xl p-3 sm:p-4 border border-gray-700/50 shadow-2xl w-64 sm:w-80 z-50 animate-slide-down">
           <div className="space-y-3 sm:space-y-4">
             <div>
               <label className="flex items-center cursor-pointer">
@@ -2192,31 +2339,19 @@ const VideoChatScreen = () => {
             
             <div className="pt-4 border-t border-gray-800">
               <h4 className="text-sm font-medium text-gray-400 mb-2">Video Layout</h4>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => handleLayoutChange('pip')}
-                  className={`p-2 rounded-lg transition-all duration-300 ${videoLayout === 'pip' ? 'bg-blue-500/20 border-blue-500/50' : 'bg-gray-800/30 border-gray-700/50'} border`}
-                >
-                  <div className="text-xs text-gray-300">PIP</div>
-                </button>
-                <button
-                  onClick={() => handleLayoutChange('grid')}
-                  className={`p-2 rounded-lg transition-all duration-300 ${videoLayout === 'grid' ? 'bg-blue-500/20 border-blue-500/50' : 'bg-gray-800/30 border-gray-700/50'} border`}
-                >
-                  <div className="text-xs text-gray-300">Grid</div>
-                </button>
-                <button
-                  onClick={() => handleLayoutChange('focus-remote')}
-                  className={`p-2 rounded-lg transition-all duration-300 ${videoLayout === 'focus-remote' ? 'bg-blue-500/20 border-blue-500/50' : 'bg-gray-800/30 border-gray-700/50'} border`}
-                >
-                  <div className="text-xs text-gray-300">Focus Remote</div>
-                </button>
-                <button
-                  onClick={() => handleLayoutChange('focus-local')}
-                  className={`p-2 rounded-lg transition-all duration-300 ${videoLayout === 'focus-local' ? 'bg-blue-500/20 border-blue-500/50' : 'bg-gray-800/30 border-gray-700/50'} border`}
-                >
-                  <div className="text-xs text-gray-300">Focus Local</div>
-                </button>
+              <div className="grid grid-cols-3 gap-2">
+                {['pip', 'grid-horizontal', 'grid-vertical', 'side-by-side', 'stack', 'cinema', 'speaker-view', 'focus-remote', 'focus-local'].map((layout) => (
+                  <button
+                    key={layout}
+                    onClick={() => handleLayoutChange(layout)}
+                    className={`p-2 rounded-lg transition-all duration-300 ${videoLayout === layout ? 'bg-blue-500/20 border-blue-500/50' : 'bg-gray-800/30 border-gray-700/50'} border hover:scale-105`}
+                    title={layout.replace('-', ' ')}
+                  >
+                    <div className="text-xs text-gray-300 truncate">
+                      {layout.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                    </div>
+                  </button>
+                ))}
               </div>
             </div>
             
@@ -2237,14 +2372,14 @@ const VideoChatScreen = () => {
                 
                 <button
                   onClick={retryLocalStream}
-                  className="w-full px-3 py-2 bg-gradient-to-r from-blue-500/20 to-cyan-500/20 hover:from-blue-500/30 hover:to-cyan-500/30 rounded-lg text-sm transition-all duration-300 backdrop-blur-sm border border-blue-500/30"
+                  className="w-full px-3 py-2 bg-gradient-to-r from-blue-500/20 to-cyan-500/20 hover:from-blue-500/30 hover:to-cyan-500/30 rounded-lg text-sm transition-all duration-300 backdrop-blur-sm border border-blue-500/30 hover:scale-[1.02]"
                 >
                   Reinitialize Camera
                 </button>
                 
                 <button
                   onClick={createAndUsePlaceholder}
-                  className="w-full px-3 py-2 bg-gradient-to-r from-purple-500/20 to-pink-500/20 hover:from-purple-500/30 hover:to-pink-500/30 rounded-lg text-sm transition-all duration-300 backdrop-blur-sm border border-purple-500/30"
+                  className="w-full px-3 py-2 bg-gradient-to-r from-purple-500/20 to-pink-500/20 hover:from-purple-500/30 hover:to-pink-500/30 rounded-lg text-sm transition-all duration-300 backdrop-blur-sm border border-purple-500/30 hover:scale-[1.02]"
                 >
                   {usingPlaceholder ? 'Refresh Placeholder' : 'Use Placeholder Video'}
                 </button>
@@ -2258,7 +2393,7 @@ const VideoChatScreen = () => {
                   forceStreamSync();
                   addNotification('Forced stream sync', 'info');
                 }}
-                className="w-full px-3 py-2 bg-gradient-to-r from-yellow-500/20 to-orange-500/20 hover:from-yellow-500/30 hover:to-orange-500/30 rounded-lg text-sm transition-all duration-300 backdrop-blur-sm border border-yellow-500/30"
+                className="w-full px-3 py-2 bg-gradient-to-r from-yellow-500/20 to-orange-500/20 hover:from-yellow-500/30 hover:to-orange-500/30 rounded-lg text-sm transition-all duration-300 backdrop-blur-sm border border-yellow-500/30 hover:scale-[1.02]"
               >
                 Force Stream Sync
               </button>
@@ -2269,5 +2404,142 @@ const VideoChatScreen = () => {
     </div>
   );
 };
+
+// Helper function to get layout icons
+const getLayoutIcon = (layout) => {
+  switch(layout) {
+    case 'pip':
+      return (
+        <div className="w-full h-full border border-gray-400 rounded relative">
+          <div className="absolute top-0 right-0 w-2 h-2 border border-gray-400 rounded-sm"></div>
+        </div>
+      );
+    case 'grid-horizontal':
+      return (
+        <div className="w-full h-full flex gap-0.5">
+          <div className="flex-1 border border-gray-400 rounded"></div>
+          <div className="flex-1 border border-gray-400 rounded"></div>
+        </div>
+      );
+    case 'grid-vertical':
+      return (
+        <div className="w-full h-full flex flex-col gap-0.5">
+          <div className="flex-1 border border-gray-400 rounded"></div>
+          <div className="flex-1 border border-gray-400 rounded"></div>
+        </div>
+      );
+    case 'side-by-side':
+      return (
+        <div className="w-full h-full flex gap-0.5">
+          <div className="w-2/3 border border-gray-400 rounded"></div>
+          <div className="w-1/3 border border-gray-400 rounded"></div>
+        </div>
+      );
+    case 'stack':
+      return (
+        <div className="w-full h-full relative">
+          <div className="absolute inset-0 border border-gray-400 rounded"></div>
+          <div className="absolute bottom-0 right-0 w-2/3 h-2/3 border border-gray-400 rounded"></div>
+        </div>
+      );
+    case 'cinema':
+      return (
+        <div className="w-full h-full border border-gray-400 rounded flex items-center justify-center">
+          <div className="w-3/4 h-2/3 border-t border-b border-gray-400"></div>
+        </div>
+      );
+    case 'speaker-view':
+      return (
+        <div className="w-full h-full flex flex-col gap-0.5">
+          <div className="h-3/4 border border-gray-400 rounded"></div>
+          <div className="h-1/4 border border-gray-400 rounded"></div>
+        </div>
+      );
+    case 'focus-remote':
+      return (
+        <div className="w-full h-full relative">
+          <div className="absolute inset-0 border border-gray-400 rounded"></div>
+          <div className="absolute top-1 right-1 w-1/3 h-1/3 border border-gray-400 rounded-sm"></div>
+        </div>
+      );
+    case 'focus-local':
+      return (
+        <div className="w-full h-full relative">
+          <div className="absolute inset-0 border border-gray-400 rounded"></div>
+          <div className="absolute top-1 left-1 w-1/3 h-1/3 border border-gray-400 rounded-sm"></div>
+        </div>
+      );
+    default:
+      return <div className="w-full h-full border border-gray-400 rounded"></div>;
+  }
+};
+
+// Add custom CSS for smooth transitions
+const styles = `
+.layout-transitioning {
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-in-up {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes slide-in-down {
+  from { transform: translateY(-20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes slide-in-left {
+  from { transform: translateX(20px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slide-in-right {
+  from { transform: translateX(-20px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes scale-in {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.5s ease-out;
+}
+
+.animate-slide-in-up {
+  animation: slide-in-up 0.5s ease-out;
+}
+
+.animate-slide-in-down {
+  animation: slide-in-down 0.5s ease-out;
+}
+
+.animate-slide-in-left {
+  animation: slide-in-left 0.5s ease-out;
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.5s ease-out;
+}
+
+.animate-scale-in {
+  animation: scale-in 0.5s ease-out;
+}
+`;
+
+// Add the styles to the document
+if (typeof document !== 'undefined') {
+  const styleSheet = document.createElement("style");
+  styleSheet.innerText = styles;
+  document.head.appendChild(styleSheet);
+}
 
 export default VideoChatScreen;
