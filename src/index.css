@@ -1,8 +1,41 @@
+/* src/styles/video-chat.css - Create this new file */
 @import "tailwindcss";
-/* Add these animations */
-@keyframes slideIn {
+
+/* ==================== VIDEO CHAT SPECIFIC ANIMATIONS ==================== */
+@keyframes fade-in {
   from {
-    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slide-in-up {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slide-in-down {
+  from {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slide-in-left {
+  from {
+    transform: translateX(20px);
     opacity: 0;
   }
   to {
@@ -11,19 +44,53 @@
   }
 }
 
-@keyframes slideOut {
+@keyframes slide-in-right {
   from {
+    transform: translateX(-20px);
+    opacity: 0;
+  }
+  to {
     transform: translateX(0);
     opacity: 1;
   }
-  to {
-    transform: translateX(-100%);
+}
+
+@keyframes scale-in {
+  from {
+    transform: scale(0.95);
     opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes gradient {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
   }
 }
 
 @keyframes pulse-glow {
-  0%, 100% {
+  0%,
+  100% {
     box-shadow: 0 0 5px rgba(59, 130, 246, 0.5);
   }
   50% {
@@ -32,7 +99,8 @@
 }
 
 @keyframes connection-pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
   }
   50% {
@@ -40,439 +108,29 @@
   }
 }
 
-.animate-slide-in {
-  animation: slideIn 0.3s ease-out;
-}
-
-.animate-slide-out {
-  animation: slideOut 0.3s ease-out;
-}
-
-.animate-pulse-glow {
-  animation: pulse-glow 2s infinite;
-}
-
-.animate-connection-pulse {
-  animation: connection-pulse 1s infinite;
-}
-
-/* Video chat specific styles */
-.video-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-}
-
-.video-container {
-  position: relative;
-  padding-bottom: 56.25%; /* 16:9 aspect ratio */
-  height: 0;
-  overflow: hidden;
-}
-
-.video-container video {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-/* Responsive design */
-@media (max-width: 768px) {
-  .video-grid {
-    grid-template-columns: 1fr;
-  }
-  
-  .chat-panel {
-    position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: 100%;
-    z-index: 50;
-  }
-}
-
-/* Add these animations to your global CSS */
-@keyframes spin-slow {
+@keyframes slide-up {
   from {
-    transform: rotate(0deg);
+    transform: translateY(100%);
+    opacity: 0;
   }
   to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes scan {
-  0%, 100% {
-    transform: translate(-50%, -100%);
-    opacity: 0;
-  }
-  50% {
-    transform: translate(-50%, 100%);
-    opacity: 1;
-  }
-}
-
-@keyframes gradient {
-  0%, 100% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-}
-
-@keyframes float {
-  0%, 100% {
-    transform: translateY(0px);
-  }
-  50% {
-    transform: translateY(-10px);
-  }
-}
-
-.animate-spin-slow {
-  animation: spin-slow 3s linear infinite;
-}
-
-.animate-scan {
-  animation: scan 2s ease-in-out infinite;
-}
-
-.animate-gradient {
-  background-size: 200% 200%;
-  animation: gradient 3s ease infinite;
-}
-
-.animate-float {
-  animation: float 3s ease-in-out infinite;
-}
-/* src/styles/animations.css */
-@keyframes float {
-  0%, 100% {
-    transform: translateY(0) translateX(0);
-  }
-  25% {
-    transform: translateY(-20px) translateX(10px);
-  }
-  50% {
-    transform: translateY(-10px) translateX(-10px);
-  }
-  75% {
-    transform: translateY(-15px) translateX(5px);
-  }
-}
-
-@keyframes pulse-ring {
-  0% {
-    transform: scale(0.8);
-    opacity: 0.5;
-  }
-  50% {
-    opacity: 0.8;
-  }
-  100% {
-    transform: scale(1.2);
-    opacity: 0;
-  }
-}
-
-@keyframes orbit {
-  0% {
-    transform: rotate(0deg) translateX(100px) rotate(0deg);
-  }
-  100% {
-    transform: rotate(360deg) translateX(100px) rotate(-360deg);
-  }
-}
-
-@keyframes fade-in-out {
-  0%, 100% {
-    opacity: 0.5;
-    transform: translateY(5px);
-  }
-  50% {
-    opacity: 1;
     transform: translateY(0);
+    opacity: 1;
   }
 }
 
 @keyframes slide-down {
   from {
+    transform: translateY(-20px);
     opacity: 0;
-    transform: translateY(-10px);
   }
   to {
-    opacity: 1;
     transform: translateY(0);
-  }
-}
-
-@keyframes scan-line {
-  0% {
-    top: -100%;
-  }
-  100% {
-    top: 100%;
-  }
-}
-
-.animate-float {
-  animation: float 6s ease-in-out infinite;
-}
-
-.animate-pulse-ring {
-  animation: pulse-ring 2s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite;
-}
-
-.animate-orbit {
-  animation: orbit 3s linear infinite;
-}
-
-.animate-fade-in-out {
-  animation: fade-in-out 3s ease-in-out infinite;
-}
-
-.animate-slide-down {
-  animation: slide-down 0.3s ease-out forwards;
-}
-
-.animate-scan-line {
-  animation: scan-line 2s linear infinite;
-}
-
-/* Global responsive styles */
-@media (max-width: 640px) {
-  .text-sm-mobile {
-    font-size: 0.875rem;
-  }
-  
-  .text-xs-mobile {
-    font-size: 0.75rem;
-  }
-  
-  .p-4-mobile {
-    padding: 1rem;
-  }
-  
-  .space-y-2-mobile > * + * {
-    margin-top: 0.5rem;
-  }
-}
-
-/* Smooth transitions */
-* {
-  -webkit-tap-highlight-color: transparent;
-}
-
-/* Better scrolling on mobile */
-@media (max-width: 768px) {
-  html {
-    -webkit-text-size-adjust: 100%;
-  }
-  
-  body {
-    overscroll-behavior-y: contain;
-  }
-}
-
-/* Input focus styles */
-input:focus, textarea:focus {
-  outline: none;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
-}
-
-/* Hide scrollbar but keep functionality */
-.hide-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-
-.hide-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-
-/* Smooth animations */
-.smooth-transition {
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* Gradient text */
-.gradient-text {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.animate-fadeIn {
-  animation: fadeIn 0.3s ease-out forwards;
-}
-
-.animate-slide-down {
-  animation: slideDown 0.2s ease-out forwards;
-}
-
-/* Custom scrollbar for message bubbles */
-.message-scroll {
-  max-height: 400px;
-  overflow-y: auto;
-}
-
-.message-scroll::-webkit-scrollbar {
-  width: 4px;
-}
-
-.message-scroll::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 10px;
-}
-
-.message-scroll::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-}
-
-.message-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
-}
-@keyframes fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes progress {
-  0% {
-    width: 0%;
-  }
-  50% {
-    width: 100%;
-  }
-  100% {
-    width: 100%;
-  }
-}
-
-@keyframes slide-down {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.animate-fade-in {
-  animation: fade-in 0.3s ease-out;
-}
-
-.animate-progress {
-  animation: progress 2s ease-in-out infinite;
-}
-
-.animate-slide-down {
-  animation: slide-down 0.2s ease-out;
-}
-
-
-/* Add to your existing animations */
-@keyframes pulse-warning {
-  0%, 100% {
     opacity: 1;
   }
-  50% {
-    opacity: 0.7;
-  }
 }
 
-.animate-pulse-warning {
-  animation: pulse-warning 2s ease-in-out infinite;
-}
-
-/* Better z-index management */
-.z-10 {
-  z-index: 10;
-}
-
-.z-20 {
-  z-index: 20;
-}
-
-.z-30 {
-  z-index: 30;
-}
-
-.z-50 {
-  z-index: 50;
-}
-
-.layout-transitioning {
-  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-@keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes slide-in-up {
-  from { transform: translateY(20px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
-
-@keyframes slide-in-down {
-  from { transform: translateY(-20px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
-
-@keyframes slide-in-left {
-  from { transform: translateX(20px); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
-}
-
-@keyframes slide-in-right {
-  from { transform: translateX(-20px); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
-}
-
-@keyframes scale-in {
-  from { transform: scale(0.95); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
-}
-
+/* ==================== ANIMATION CLASSES ==================== */
 .animate-fade-in {
   animation: fade-in 0.5s ease-out;
 }
@@ -501,18 +159,335 @@ input:focus, textarea:focus {
   animation: float 3s ease-in-out infinite;
 }
 
-@keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-10px); }
-}
-
 .animate-gradient {
   background-size: 200% 200%;
   animation: gradient 3s ease infinite;
 }
 
-@keyframes gradient {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
+.animate-pulse-glow {
+  animation: pulse-glow 2s infinite;
+}
+
+.animate-connection-pulse {
+  animation: connection-pulse 1s infinite;
+}
+
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out;
+}
+
+.animate-slide-down {
+  animation: slide-down 0.3s ease-out;
+}
+
+/* ==================== VIDEO CHAT SPECIFIC STYLES ==================== */
+.video-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+}
+
+.video-container video {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #111827;
+  transition: all 0.3s ease-in-out;
+}
+
+/* Layout specific styles */
+.layout-pip .local-video-container {
+  position: absolute;
+  z-index: 20;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+.layout-transitioning {
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.layout-transitioning video {
+  opacity: 0.8;
+  filter: blur(2px);
+}
+
+/* ==================== RESPONSIVE BREAKPOINTS ==================== */
+/* Mobile First Approach */
+@media (max-width: 640px) {
+  .video-container {
+    height: calc(100vh - 120px);
+  }
+  
+  .mobile-full-width {
+    width: 100vw;
+    margin-left: -1rem;
+    margin-right: -1rem;
+  }
+  
+  .mobile-text-sm {
+    font-size: 0.875rem;
+  }
+  
+  .mobile-p-2 {
+    padding: 0.5rem;
+  }
+}
+
+/* Tablet */
+@media (min-width: 641px) and (max-width: 1024px) {
+  .video-container {
+    height: calc(100vh - 140px);
+  }
+  
+  .tablet-flex-col {
+    flex-direction: column;
+  }
+}
+
+/* Desktop */
+@media (min-width: 1025px) {
+  .video-container {
+    height: calc(100vh - 160px);
+  }
+  
+  .desktop-flex-row {
+    flex-direction: row;
+  }
+  
+  .desktop-w-sidebar {
+    width: calc(100% - 320px);
+  }
+}
+
+/* ==================== UTILITY CLASSES ==================== */
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.smooth-transition {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Input focus styles */
+input:focus,
+textarea:focus,
+button:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+/* Custom scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* ==================== Z-INDEX MANAGEMENT ==================== */
+.z-video-overlay {
+  z-index: 10;
+}
+
+.z-video-controls {
+  z-index: 20;
+}
+
+.z-video-menu {
+  z-index: 30;
+}
+
+.z-video-modal {
+  z-index: 40;
+}
+
+.z-video-alert {
+  z-index: 50;
+}
+
+/* ==================== SPECIFIC COMPONENT STYLES ==================== */
+/* Video overlay states */
+.video-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+}
+
+.video-placeholder-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+}
+
+/* Connection status indicators */
+.connection-indicator {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.connection-indicator-connected {
+  background-color: rgba(34, 197, 94, 0.1);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.2);
+}
+
+.connection-indicator-connecting {
+  background-color: rgba(234, 179, 8, 0.1);
+  color: #eab308;
+  border: 1px solid rgba(234, 179, 8, 0.2);
+  animation: pulse-glow 2s infinite;
+}
+
+.connection-indicator-disconnected {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+/* Video controls */
+.video-controls-container {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent);
+  padding: 1rem;
+  transition: all 0.3s ease-in-out;
+}
+
+.video-controls-container.hidden {
+  transform: translateY(100%);
+  opacity: 0;
+}
+
+.video-control-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 9999px;
+  transition: all 0.2s ease-in-out;
+  border: 2px solid transparent;
+}
+
+.video-control-button:hover {
+  transform: scale(1.1);
+}
+
+.video-control-button:active {
+  transform: scale(0.95);
+}
+
+.video-control-button-enabled {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: rgba(59, 130, 246, 0.5);
+  color: #60a5fa;
+}
+
+.video-control-button-disabled {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #f87171;
+}
+
+.video-control-button-neutral {
+  background: rgba(75, 85, 99, 0.2);
+  border-color: rgba(75, 85, 99, 0.5);
+  color: #9ca3af;
+}
+
+/* Fullscreen styles */
+:fullscreen .video-container {
+  height: 100vh;
+}
+
+:fullscreen .video-controls-container {
+  padding: 2rem;
+}
+
+/* Print styles */
+@media print {
+  .video-container,
+  .video-controls-container,
+  .layout-menu {
+    display: none;
+  }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+  .video-control-button {
+    border-width: 3px;
+  }
+  
+  .connection-indicator {
+    border-width: 2px;
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  
+  .layout-transitioning {
+    transition: none;
+  }
+  
+  .animate-fade-in,
+  .animate-slide-in-up,
+  .animate-slide-in-down,
+  .animate-slide-in-left,
+  .animate-slide-in-right,
+  .animate-scale-in,
+  .animate-float,
+  .animate-gradient,
+  .animate-pulse-glow,
+  .animate-connection-pulse,
+  .animate-slide-up,
+  .animate-slide-down {
+    animation: none;
+  }
 }
