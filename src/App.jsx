@@ -24,10 +24,11 @@ import CommunityGuidelines from '../src/pages/CommunityGuidelines';
 import PrivacyPolicy from '../src/pages/PrivacyPolicy';
 import TermsOfService from '../src/pages/TermsOfService';
 import ContactUs from './pages/ContactUs';
-
+import { HelmetProvider } from 'react-helmet-async';
 function App() {
   return (
-    <ChatProvider>
+     <HelmetProvider>
+       <ChatProvider>
       <Router>
         <Routes>
           <Route path="/" element={<MainContent />} />
@@ -38,6 +39,8 @@ function App() {
         </Routes>
       </Router>
     </ChatProvider>
+     </HelmetProvider>
+   
   );
 }
 

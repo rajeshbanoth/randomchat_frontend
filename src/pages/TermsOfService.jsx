@@ -36,6 +36,8 @@ import {
 } from 'react-icons/fa';
 
 import { FaEye ,FaBell} from "react-icons/fa";
+import { Link } from 'react-router-dom';
+import { STORAGE_KEYS } from '../utils/storage';
 
 const TermsOfService = () => {
   const [acceptedTerms, setAcceptedTerms] = useState(false);
@@ -54,6 +56,30 @@ const TermsOfService = () => {
       setAcceptedTerms(true);
     }
   }, []);
+
+
+  
+    const handleClearAllData = () => {
+      if (window.confirm('Are you sure you want to clear all stored data? This will reset your profile, interests, and consent.')) {
+        try {
+          Object.values(STORAGE_KEYS).forEach(key => localStorage.removeItem(key));
+          
+          // setTermsAccepted(false);
+          // setAgeVerified(false);
+          // setShowAgeVerification(true);
+          
+          // onAcceptTerms?.(false);
+          // onVerifyAge?.(false);
+          // onUpdateInterests?.([]);
+          
+          alert('All data has been cleared. Page will refresh.');
+          setTimeout(() => window.location.reload(), 1000);
+        } catch (error) {
+          console.error('Error clearing localStorage:', error);
+          alert('Error clearing data. Please try again.');
+        }
+      }
+    };
 
   const handleAcceptTerms = () => {
     localStorage.setItem('omegle_pro_terms_accepted', 'true');
@@ -761,7 +787,7 @@ const TermsOfService = () => {
                   </p>
                   <div className="p-3 bg-gray-800/50 rounded-lg">
                     <div className="font-medium">Copyright Agent</div>
-                    <div className="text-sm text-gray-400">copyright@omeglepro.com</div>
+                    <div className="text-sm text-gray-400">rajibanavath@zohomail.in</div>
                     <div className="text-xs text-gray-500 mt-1">Response within 48 hours for valid claims</div>
                   </div>
                 </div>
@@ -1082,7 +1108,7 @@ const TermsOfService = () => {
                     <div className="space-y-4">
                       <div>
                         <div className="font-medium">Legal Department</div>
-                        <div className="text-sm text-gray-400">legal@omeglepro.com</div>
+                        <div className="text-sm text-gray-400">rajibanavath@zohomail.in</div>
                         <div className="text-xs text-gray-500">For legal notices and official correspondence</div>
                       </div>
                       <div>
@@ -1104,21 +1130,21 @@ const TermsOfService = () => {
                         <FaEnvelope className="text-blue-400" />
                         <div>
                           <div className="font-medium">General Support</div>
-                          <div className="text-sm text-gray-400">support@omeglepro.com</div>
+                          <div className="text-sm text-gray-400">rajibanavath@zohomail.in</div>
                         </div>
                       </div>
                       <div className="flex items-center space-x-3 p-3 bg-gray-900/50 rounded-lg">
                         <FaShieldAlt className="text-green-400" />
                         <div>
                           <div className="font-medium">Safety & Abuse</div>
-                          <div className="text-sm text-gray-400">abuse@omeglepro.com</div>
+                          <div className="text-sm text-gray-400">rajibanavath@zohomail.in</div>
                         </div>
                       </div>
                       <div className="flex items-center space-x-3 p-3 bg-gray-900/50 rounded-lg">
                         <FaCopyright className="text-purple-400" />
                         <div>
                           <div className="font-medium">Copyright Agent</div>
-                          <div className="text-sm text-gray-400">copyright@omeglepro.com</div>
+                          <div className="text-sm text-gray-400">rajibanavath@zohomail.in</div>
                         </div>
                       </div>
                     </div>
@@ -1183,6 +1209,40 @@ const TermsOfService = () => {
             </div>
           </div>
         </div>
+
+
+                      {/* Footer with Legal Disclaimers */}
+                        <footer className="border-t border-gray-800/50 mt-8 md:mt-12">
+                          <div className="max-w-6xl mx-auto px-4 md:px-6 py-6 md:py-8">
+                            <div className="text-center text-gray-500 text-xs md:text-sm">
+                              <p className="mb-2">
+                                <strong className="text-red-400">WARNING:</strong> This platform is for ADULTS (18+) only. 
+                                Users may encounter explicit content, scams, and potentially dangerous individuals.
+                              </p>
+                              <p className="mb-4">
+                                All chats are anonymous and not recorded. Use at your own risk.
+                                By using this service, you confirm you are 18+ and accept full responsibility for your interactions.
+                              </p>
+                              <div className="flex flex-wrap justify-center gap-3 md:gap-4 text-xs">
+                  
+                    <Link to="/community-guidelines" className="text-blue-400 hover:underline">Community Guidelines</Link> | 
+                       <Link to="/privacy-policy" className="text-blue-400 hover:underline">Privacy Policy</Link> | 
+                    <Link to="/terms-of-service" className="text-blue-400 hover:underline">Terms of Service</Link> |
+                  <Link to="/contact-us" className="text-blue-400 hover:underline"> Contact Us</Link> |
+                                <a href="#" className="text-blue-400 hover:underline">Safety Center</a> |
+                                <a href="#" className="text-blue-400 hover:underline">Report Abuse</a> |
+                                <button onClick={handleClearAllData} className="text-red-400 hover:underline">Clear Saved Data</button>
+                              </div>
+                              <p className="mt-4 text-gray-600 text-xs md:text-sm">
+                                If you are under 18, please exit immediately. 
+                                <a href="https://www.kidshelpphone.ca" className="text-blue-400 hover:underline ml-2">
+                                  Resources for youth
+                                </a>
+                              </p>
+                            </div>
+                             
+                          </div>
+                        </footer>
       </div>
 
       {/* Accept Terms Dialog */}
@@ -1278,7 +1338,7 @@ const TermsOfService = () => {
       {/* Floating Help Button */}
       <div className="fixed bottom-6 right-6 z-50">
         <button
-          onClick={() => window.open('mailto:legal@omeglepro.com')}
+          onClick={() => window.open('mailto:rajibanavath@zohomail.in')}
           className="flex items-center space-x-2 px-5 py-3 bg-gradient-to-r from-purple-600 to-pink-600 rounded-full shadow-lg hover:shadow-xl transition-all hover:scale-105"
         >
           <FaQuestionCircle className="text-white" />

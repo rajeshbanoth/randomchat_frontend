@@ -2898,6 +2898,7 @@ const VideoChatScreen = () => {
   const [videoLayout, setVideoLayout] = useState(() => {
     // Try to load from localStorage
     const saved = localStorage.getItem('videoChatDefaultLayout');
+    console.log(saved ? '💾 Loaded saved layout:' + saved : 'No saved layout found');
     const isMobile = window.innerWidth < 768;
     
     if (saved && LAYOUT_CONFIG.find(l => l.id === saved)) {
@@ -3146,33 +3147,49 @@ const VideoChatScreen = () => {
                       )}
                       
                       {/* Action Buttons */}
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            saveDefaultLayout(layout.id);
-                          }}
-                          className={`flex-1 text-xs px-3 py-1.5 rounded-lg transition-all duration-300 ${
-                            isDefault 
-                              ? 'bg-gradient-to-r from-emerald-500/30 to-green-500/30 border border-emerald-500/50 text-emerald-300' 
-                              : 'bg-gradient-to-r from-gray-800/50 to-gray-900/50 border border-gray-700/50 text-gray-400 hover:text-white hover:border-gray-600/50'
-                          }`}
-                        >
-                          {isDefault ? 'Default Saved' : 'Set as Default'}
-                        </button>
-                        
-                        {isDefault && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              clearDefaultLayout();
-                            }}
-                            className="px-3 py-1.5 text-xs bg-gradient-to-r from-red-500/20 to-rose-500/20 border border-red-500/30 text-red-300 rounded-lg hover:opacity-90 transition-all duration-300"
-                          >
-                            Clear
-                          </button>
-                        )}
-                      </div>
+                <div
+  onClick={() => selectLayout(layout.id)}
+  role="button"
+  tabIndex={0}
+  className="relative p-4 rounded-xl transition-all duration-300 border-2 group border-gray-700/50 hover:border-gray-500/50 cursor-pointer"
+>
+  <div>
+    <div className="text-left">
+      <p className="text-sm text-gray-300">Layout Name</p>
+
+      <div className="flex space-x-2 mt-2">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            saveDefaultLayout(layout.id);
+          }}
+          className={`flex-1 text-xs px-3 py-1.5 rounded-lg transition-all duration-300 ${
+            isDefault
+              ? 'bg-gradient-to-r from-emerald-500/30 to-green-500/30 border border-emerald-500/50 text-emerald-300'
+              : 'bg-gradient-to-r from-gray-800/50 to-gray-900/50 border border-gray-700/50 text-gray-400 hover:text-white hover:border-gray-600/50'
+          }`}
+        >
+          {isDefault ? 'Default Saved' : 'Set as Default'}
+        </button>
+
+        {isDefault && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              clearDefaultLayout();
+            }}
+            className="px-3 py-1.5 text-xs bg-gradient-to-r from-red-500/20 to-rose-500/20 border border-red-500/30 text-red-300 rounded-lg hover:opacity-90 transition-all duration-300"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+    </div>
+  </div>
+</div>
+
                     </div>
                   </button>
                 );
@@ -4246,15 +4263,21 @@ const VideoChatScreen = () => {
     addNotification('Video call ended', 'info');
   };
 
-  const handleNext = () => {
-    console.log('⏭️ Switching to next partner');
-    handleDisconnect();
-    setTimeout(() => {
-      if (nextPartner) {
-        nextPartner();
-      }
-    }, 500);
+
+    const handleNext = () => {
+    if (nextPartner) {
+      nextPartner();
+    }
   };
+  // const handleNext = () => {
+  //   console.log('⏭️ Switching to next partner');
+  //   handleDisconnect();
+  //   setTimeout(() => {
+  //     if (nextPartner) {
+  //       nextPartner();
+  //     }
+  //   }, 500);
+  // };
 
   const copyRoomLink = () => {
     const link = `${window.location.origin}/video/${callInfo.roomId || callInfo.callId}`;
@@ -4832,85 +4855,85 @@ const renderVideoLayout = () => {
 
   // ==================== RENDER ====================
 
-  // If searching and no partner, show searching screen
-  if (searching && !partner) {
-    return (
-      <div className={`h-screen flex flex-col bg-gradient-to-br ${themes[activeTheme]} transition-all duration-500`}>
-        {/* Animated Background */}
-        <div className="absolute inset-0 overflow-hidden">
-          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-full animate-pulse"></div>
-          <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-gradient-to-r from-cyan-500/10 to-emerald-500/10 rounded-full animate-pulse delay-1000"></div>
-        </div>
+  // // If searching and no partner, show searching screen
+  // if (searching && !partner) {
+  //   return (
+  //     <div className={`h-screen flex flex-col bg-gradient-to-br ${themes[activeTheme]} transition-all duration-500`}>
+  //       {/* Animated Background */}
+  //       <div className="absolute inset-0 overflow-hidden">
+  //         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-full animate-pulse"></div>
+  //         <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-gradient-to-r from-cyan-500/10 to-emerald-500/10 rounded-full animate-pulse delay-1000"></div>
+  //       </div>
         
-        {/* Header */}
-        <div className="relative px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-800/50 bg-gray-900/30 backdrop-blur-xl">
-          <div className="max-w-6xl mx-auto flex items-center justify-between">
-            <button
-              onClick={() => setCurrentScreen('home')}
-              className="group flex items-center space-x-2 sm:space-x-3 text-gray-400 hover:text-white transition-all duration-300 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl hover:bg-gray-800/50 backdrop-blur-sm"
-            >
-              <FaArrowLeft className="group-hover:-translate-x-1 transition-transform" />
-              <span className="font-medium text-sm sm:text-base">Back to Home</span>
-            </button>
+  //       {/* Header */}
+  //       <div className="relative px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-800/50 bg-gray-900/30 backdrop-blur-xl">
+  //         <div className="max-w-6xl mx-auto flex items-center justify-between">
+  //           <button
+  //             onClick={() => setCurrentScreen('home')}
+  //             className="group flex items-center space-x-2 sm:space-x-3 text-gray-400 hover:text-white transition-all duration-300 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl hover:bg-gray-800/50 backdrop-blur-sm"
+  //           >
+  //             <FaArrowLeft className="group-hover:-translate-x-1 transition-transform" />
+  //             <span className="font-medium text-sm sm:text-base">Back to Home</span>
+  //           </button>
             
-            <div className="flex items-center space-x-2 sm:space-x-4">
-              <div className="flex items-center space-x-2 sm:space-x-3 px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-xl border border-gray-700/50">
-                <div className="relative">
-                  <div className="w-2 h-2 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full animate-ping"></div>
-                  <div className="absolute inset-0 w-2 h-2 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full"></div>
-                </div>
-                <span className="text-xs sm:text-sm font-medium bg-gradient-to-r from-yellow-400 to-orange-400 bg-clip-text text-transparent">
-                  Searching for video...
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
+  //           <div className="flex items-center space-x-2 sm:space-x-4">
+  //             <div className="flex items-center space-x-2 sm:space-x-3 px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-xl border border-gray-700/50">
+  //               <div className="relative">
+  //                 <div className="w-2 h-2 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full animate-ping"></div>
+  //                 <div className="absolute inset-0 w-2 h-2 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full"></div>
+  //               </div>
+  //               <span className="text-xs sm:text-sm font-medium bg-gradient-to-r from-yellow-400 to-orange-400 bg-clip-text text-transparent">
+  //                 Searching for video...
+  //               </span>
+  //             </div>
+  //           </div>
+  //         </div>
+  //       </div>
         
-        {/* Searching Screen */}
-        <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 relative">
-          <div className="text-center max-w-md">
-            {/* Animated Video Icon */}
-            <div className="relative mb-6 sm:mb-10">
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-48 h-48 sm:w-64 sm:h-64 rounded-full bg-gradient-to-r from-blue-500/20 to-purple-500/20 animate-ping"></div>
-              </div>
-              <div className="w-32 h-32 sm:w-48 sm:h-48 rounded-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 flex items-center justify-center text-white text-3xl sm:text-5xl relative animate-float">
-                <div className="absolute inset-3 sm:inset-4 rounded-full bg-gradient-to-br from-white/20 to-transparent backdrop-blur-sm"></div>
-                <FaVideo className="relative animate-pulse" />
-              </div>
-            </div>
+  //       {/* Searching Screen */}
+  //       <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 relative">
+  //         <div className="text-center max-w-md">
+  //           {/* Animated Video Icon */}
+  //           <div className="relative mb-6 sm:mb-10">
+  //             <div className="absolute inset-0 flex items-center justify-center">
+  //               <div className="w-48 h-48 sm:w-64 sm:h-64 rounded-full bg-gradient-to-r from-blue-500/20 to-purple-500/20 animate-ping"></div>
+  //             </div>
+  //             <div className="w-32 h-32 sm:w-48 sm:h-48 rounded-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 flex items-center justify-center text-white text-3xl sm:text-5xl relative animate-float">
+  //               <div className="absolute inset-3 sm:inset-4 rounded-full bg-gradient-to-br from-white/20 to-transparent backdrop-blur-sm"></div>
+  //               <FaVideo className="relative animate-pulse" />
+  //             </div>
+  //           </div>
             
-            <h2 className="text-2xl sm:text-4xl font-bold mb-3 sm:mb-4 bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent animate-gradient">
-              Looking for video partner...
-            </h2>
-            <p className="text-gray-400 mb-6 sm:mb-10 text-sm sm:text-lg">
-              We're searching for someone who wants to video chat
-            </p>
+  //           <h2 className="text-2xl sm:text-4xl font-bold mb-3 sm:mb-4 bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent animate-gradient">
+  //             Looking for video partner...
+  //           </h2>
+  //           <p className="text-gray-400 mb-6 sm:mb-10 text-sm sm:text-lg">
+  //             We're searching for someone who wants to video chat
+  //           </p>
             
-            <div className="space-y-3 sm:space-y-4 max-w-xs mx-auto">
-              <button
-                onClick={() => setCurrentScreen('home')}
-                className="w-full px-4 py-3 sm:px-8 sm:py-3.5 bg-gradient-to-r from-gray-800 to-gray-900 hover:from-gray-700 hover:to-gray-800 rounded-xl font-medium transition-all duration-300 border border-gray-700/50 hover:border-gray-600/50 backdrop-blur-sm group"
-              >
-                <span className="group-hover:translate-x-1 transition-transform inline-block text-sm sm:text-base">
-                  Cancel Search
-                </span>
-              </button>
+  //           <div className="space-y-3 sm:space-y-4 max-w-xs mx-auto">
+  //             <button
+  //               onClick={() => setCurrentScreen('home')}
+  //               className="w-full px-4 py-3 sm:px-8 sm:py-3.5 bg-gradient-to-r from-gray-800 to-gray-900 hover:from-gray-700 hover:to-gray-800 rounded-xl font-medium transition-all duration-300 border border-gray-700/50 hover:border-gray-600/50 backdrop-blur-sm group"
+  //             >
+  //               <span className="group-hover:translate-x-1 transition-transform inline-block text-sm sm:text-base">
+  //                 Cancel Search
+  //               </span>
+  //             </button>
               
-              <button
-                onClick={() => setShowSettings(!showSettings)}
-                className="w-full px-4 py-3 sm:px-8 sm:py-3.5 bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 hover:from-emerald-500/30 hover:to-cyan-500/30 rounded-xl font-medium transition-all duration-300 border border-emerald-500/30 hover:border-emerald-500/50 backdrop-blur-sm group"
-              >
-                <FaCog className="inline mr-2 sm:mr-3 group-hover:rotate-180 transition-transform" />
-                <span className="text-sm sm:text-base">Video Settings</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  //             <button
+  //               onClick={() => setShowSettings(!showSettings)}
+  //               className="w-full px-4 py-3 sm:px-8 sm:py-3.5 bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 hover:from-emerald-500/30 hover:to-cyan-500/30 rounded-xl font-medium transition-all duration-300 border border-emerald-500/30 hover:border-emerald-500/50 backdrop-blur-sm group"
+  //             >
+  //               <FaCog className="inline mr-2 sm:mr-3 group-hover:rotate-180 transition-transform" />
+  //               <span className="text-sm sm:text-base">Video Settings</span>
+  //             </button>
+  //           </div>
+  //         </div>
+  //       </div>
+  //     </div>
+  //   );
+  // }
 
   return (
     <div className={`h-screen flex flex-col bg-gradient-to-br ${themes[activeTheme]} transition-all duration-500`}>
@@ -5175,76 +5198,9 @@ const renderVideoLayout = () => {
         </div>
         
         {/* Additional Controls */}
-        <div className="px-4 pb-2 sm:px-6 sm:pb-3 border-t border-gray-800/30 pt-2">
-          <div className="max-w-4xl mx-auto">
-            <div className="flex justify-center space-x-2 sm:space-x-4">
-              <button
-                onClick={() => setShowLayoutModal(true)}
-                className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-blue-500/20 to-cyan-500/20 hover:from-blue-500/30 hover:to-cyan-500/30 rounded-lg text-xs sm:text-sm transition-all duration-300 backdrop-blur-sm border border-blue-500/30 flex items-center"
-              >
-                <FaLayout className="mr-1 sm:mr-2" />
-                <span>Change Layout</span>
-              </button>
-              
-              <button
-                onClick={copyRoomLink}
-                className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-gray-800/30 to-gray-900/30 hover:from-gray-700/30 hover:to-gray-800/30 rounded-lg text-xs sm:text-sm transition-all duration-300 backdrop-blur-sm border border-gray-700/30 flex items-center"
-              >
-                <FaRegCopy className="mr-1 sm:mr-2" />
-                <span>Copy Link</span>
-              </button>
-              
-              <button
-                onClick={debugLayoutInfo}
-                className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-gray-800/30 to-gray-900/30 hover:from-gray-700/30 hover:to-gray-800/30 rounded-lg text-xs sm:text-sm transition-all duration-300 backdrop-blur-sm border border-gray-700/30"
-              >
-                <FaInfoCircle className="inline mr-1 sm:mr-2" />
-                <span>Debug Layout</span>
-              </button>
-              
-              <button
-                onClick={debugStreamInfo}
-                className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-blue-500/20 to-cyan-500/20 hover:from-blue-500/30 hover:to-cyan-500/30 rounded-lg text-xs sm:text-sm transition-all duration-300 backdrop-blur-sm border border-blue-500/30"
-              >
-                <FaInfoCircle className="inline mr-1 sm:mr-2" />
-                <span>Debug Streams</span>
-              </button>
-              
-              {!hasLocalStream && (
-                <button
-                  onClick={retryLocalStream}
-                  className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-yellow-500/20 to-orange-500/20 hover:from-yellow-500/30 hover:to-orange-500/30 rounded-lg text-xs sm:text-sm transition-all duration-300 backdrop-blur-sm border border-yellow-500/30"
-                >
-                  <FaSync className="inline mr-1 sm:mr-2" />
-                  <span>Retry Camera</span>
-                </button>
-              )}
-              
-              <button
-                onClick={createAndUsePlaceholder}
-                className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-purple-500/20 to-pink-500/20 hover:from-purple-500/30 hover:to-pink-500/30 rounded-lg text-xs sm:text-sm transition-all duration-300 backdrop-blur-sm border border-purple-500/30"
-              >
-                <FaCamera className="inline mr-1 sm:mr-2" />
-                <span>Placeholder</span>
-              </button>
-              
-              {/* Quick Layout Switcher for Mobile */}
-              {isMobile && (
-                <button
-                  onClick={() => {
-                    const layouts = ['pip', 'grid-horizontal', 'grid-vertical', 'side-by-side', 'stack'];
-                    const nextLayout = layouts[(layouts.indexOf(videoLayout) + 1) % layouts.length];
-                    handleLayoutChange(nextLayout);
-                  }}
-                  className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-indigo-500/20 to-blue-500/20 hover:from-indigo-500/30 hover:to-blue-500/30 rounded-lg text-xs sm:text-sm transition-all duration-300 backdrop-blur-sm border border-indigo-500/30"
-                  title="Switch layout"
-                >
-                  <span>Layout: {videoLayout.replace('-', ' ')}</span>
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
+    
+
+        
       </div>
       
       {/* Settings Panel */}
