@@ -9,6 +9,7 @@ import {
   FaHeadset, FaRocket, FaChartLine, FaHandshake, FaCrown,
   FaMedal, FaAward, FaGavel, FaNewspaper, FaBriefcase
 } from 'react-icons/fa';
+import { Link } from 'react-router-dom';
 
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL+"/api" || 'http://localhost:5001/api';
 
@@ -235,6 +236,28 @@ const ContactUs = () => {
     return baseSuggestions[formData.contactReason] || [];
   };
 
+   const handleClearAllData = () => {
+        if (window.confirm('Are you sure you want to clear all stored data? This will reset your profile, interests, and consent.')) {
+          try {
+            Object.values(STORAGE_KEYS).forEach(key => localStorage.removeItem(key));
+            
+            // setTermsAccepted(false);
+            // setAgeVerified(false);
+            // setShowAgeVerification(true);
+            
+            // onAcceptTerms?.(false);
+            // onVerifyAge?.(false);
+            // onUpdateInterests?.([]);
+            
+            alert('All data has been cleared. Page will refresh.');
+            setTimeout(() => window.location.reload(), 1000);
+          } catch (error) {
+            console.error('Error clearing localStorage:', error);
+            alert('Error clearing data. Please try again.');
+          }
+        }
+      };
+
   // Generate FAQ Schema
   const generateFAQSchema = () => ({
     "@context": "https://schema.org",
@@ -458,7 +481,8 @@ const ContactUs = () => {
         <header className="sticky top-0 z-50 bg-gray-900/95 backdrop-blur-sm border-b border-gray-800">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
             <div className="flex justify-between items-center">
-              <div className="flex items-center space-x-3">
+              <Link to="/" className="flex items-center space-x-3">
+               <div className="flex items-center space-x-3">
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 flex items-center justify-center">
                   <FaEnvelope className="text-white text-xl" />
                 </div>
@@ -468,7 +492,8 @@ const ContactUs = () => {
                   </h1>
                   <p className="text-xs text-gray-400">Contact & Support</p>
                 </div>
-              </div>
+              </div></Link>
+             
               <div className="hidden md:flex items-center space-x-3">
                 <div className="flex items-center space-x-2 text-green-400">
                   <FaClock />
@@ -1039,8 +1064,10 @@ const ContactUs = () => {
         </div>
 
         {/* Footer */}
-        <footer className="border-t border-gray-800 mt-8">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+              {/* Footer with Legal Disclaimers */}
+                      <footer className="border-t border-gray-800/50 mt-8 md:mt-12">
+                       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             <div className="text-center">
               <div className="flex flex-col md:flex-row justify-between items-center mb-6">
                 <div className="mb-4 md:mb-0">
@@ -1066,7 +1093,37 @@ const ContactUs = () => {
               </div>
             </div>
           </div>
-        </footer>
+                      
+                        <div className="max-w-6xl mx-auto px-4 md:px-6 py-6 md:py-8">
+                          <div className="text-center text-gray-500 text-xs md:text-sm">
+                            <p className="mb-2">
+                              <strong className="text-red-400">WARNING:</strong> This platform is for ADULTS (18+) only. 
+                              Users may encounter explicit content, scams, and potentially dangerous individuals.
+                            </p>
+                            <p className="mb-4">
+                              All chats are anonymous and not recorded. Use at your own risk.
+                              By using this service, you confirm you are 18+ and accept full responsibility for your interactions.
+                            </p>
+                            <div className="flex flex-wrap justify-center gap-3 md:gap-4 text-xs">
+                
+                  <Link to="/community-guidelines" className="text-blue-400 hover:underline">Community Guidelines</Link> | 
+                     <Link to="/privacy-policy" className="text-blue-400 hover:underline">Privacy Policy</Link> | 
+                  <Link to="/terms-of-service" className="text-blue-400 hover:underline">Terms of Service</Link> |
+                <Link to="/contact-us" className="text-blue-400 hover:underline"> Contact Us</Link> |
+                              <a href="#" className="text-blue-400 hover:underline">Safety Center</a> |
+                              <a href="#" className="text-blue-400 hover:underline">Report Abuse</a> |
+                              <button onClick={handleClearAllData} className="text-red-400 hover:underline">Clear Saved Data</button>
+                            </div>
+                            <p className="mt-4 text-gray-600 text-xs md:text-sm">
+                              If you are under 18, please exit immediately. 
+                              <a href="https://www.kidshelpphone.ca" className="text-blue-400 hover:underline ml-2">
+                                Resources for youth
+                              </a>
+                            </p>
+                          </div>
+                        </div>
+                      </footer>
+    
 
         {/* Floating Help Button */}
         <div className="fixed bottom-6 right-6 z-50">

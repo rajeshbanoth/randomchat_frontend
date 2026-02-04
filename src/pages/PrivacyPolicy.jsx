@@ -384,7 +384,7 @@ const PrivacyPolicy = () => {
         <header className="sticky top-0 z-50 bg-gray-900/95 backdrop-blur-sm border-b border-gray-800">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
             <div className="flex justify-between items-center">
-              <div className="flex items-center space-x-3">
+               <Link to="/" className="flex items-center space-x-3"> <div className="flex items-center space-x-3">
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center">
                   <FaShieldAlt className="text-white text-xl" />
                 </div>
@@ -394,7 +394,8 @@ const PrivacyPolicy = () => {
                   </h1>
                   <p className="text-xs text-gray-400">Privacy & Compliance Center</p>
                 </div>
-              </div>
+              </div></Link>
+             
               <div className="flex space-x-3">
                 <button
                   onClick={printPolicy}

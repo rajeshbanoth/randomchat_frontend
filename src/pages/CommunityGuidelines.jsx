@@ -480,8 +480,10 @@ const CommunityGuidelines = () => {
         {/* Header */}
         <header className="sticky top-0 z-50 bg-gray-900/95 backdrop-blur-sm border-b border-gray-800">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+
+
             <div className="flex justify-between items-center">
-              <div className="flex items-center space-x-3">
+              <Link to="/" className="flex items-center space-x-3"> <div className="flex items-center space-x-3">
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 flex items-center justify-center">
                   <FaUsers className="text-white text-xl" />
                 </div>
@@ -491,7 +493,8 @@ const CommunityGuidelines = () => {
                   </h1>
                   <p className="text-xs text-gray-400">Community Guidelines</p>
                 </div>
-              </div>
+              </div></Link>
+             
               <button
                 onClick={() => setReportDialog(true)}
                 className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-red-600 to-pink-600 hover:opacity-90 rounded-lg transition-all"

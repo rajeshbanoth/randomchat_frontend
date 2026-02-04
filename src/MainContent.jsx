@@ -547,7 +547,7 @@ function MainContent() {
         </Suspense>
 
         {/* Connection Status Bar */}
-        {currentScreen !== 'profile' && (
+        {/* {currentScreen !== 'profile' && (
           <div className="fixed bottom-0 left-0 right-0 bg-gray-900/80 backdrop-blur-sm border-t border-gray-800/50 px-4 py-2">
             <div className="max-w-6xl mx-auto flex justify-between items-center text-sm">
               <div className="flex items-center space-x-4">
@@ -588,7 +588,7 @@ function MainContent() {
               </div>
             </div>
           </div>
-        )}
+        )} */}
       </div>
     </>
   );
