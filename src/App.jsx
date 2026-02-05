@@ -26,6 +26,9 @@ import TermsOfService from '../src/pages/TermsOfService';
 import ContactUs from './pages/ContactUs';
 import { HelmetProvider } from 'react-helmet-async';
 import AboutPage from './pages/AboutPage';
+import TextOnlyHomeScreen from './components/HomeScreen/TextOnlyHomeScreen';
+import VideoOnlyHomeScreen from './components/HomeScreen/VideoOnlyChat';
+
 function App() {
   return (
      <HelmetProvider>
@@ -33,8 +36,8 @@ function App() {
       <Router>
         <Routes>
       
-           <Route path="/text-chat" element={<MainContent />} />
-             <Route path="/video-chat" element={<MainContent />} />
+           <Route path="/text-chat" element={<TextOnlyHomeScreen />} />
+             <Route path="/video-chat" element={<VideoOnlyHomeScreen />} />
             <Route path="/" element={<MainContent />} />
                 <Route path="/home" element={<MainContent />} />
              <Route path="/aboutus" element={<AboutPage />} />
