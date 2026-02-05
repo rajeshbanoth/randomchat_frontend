@@ -15,25 +15,35 @@ import { FaCheckCircle, FaExclamationCircle, FaExclamationTriangle, FaInfoCircle
 import { formatSearchTime } from './utils/helpers';
 
 // List of high-traffic keywords for Omegle alternatives
+// Updated List of high-traffic keywords for Omegle alternatives
 const SEO_KEYWORDS = {
   primary: [
-    'omegle alternative', 'random video chat', 'stranger chat', 'anonymous chat',
-    'free video chat', 'text chat online', 'meet new people', 'chat with strangers',
-    'webcam chat', 'random chat app', 'video call with strangers', 'omegle clone',
-    'chatroulette alternative', 'live video chat', 'online chat platform'
+    'omegle com app', 'omegle tv', 'omegle girl', 'omegle live', 'omegle video call',
+    'omegle talk to strangers', 'omegle free', 'omegle me', 'omegle alternative',
+    'random video chat', 'stranger chat', 'anonymous chat', 'free video chat',
+    'text chat online', 'meet new people', 'chat with strangers', 'webcam chat'
   ],
   secondary: [
-    'no registration chat', 'instant chat', 'global chat', 'video dating',
-    'random video call', 'chat random', 'talk to strangers', 'find friends online',
-    'social chat', 'free chat rooms', 'video chat rooms', 'text chat app',
-    'omegle pro', 'chat hub', 'emerald chat', 'ome tv', 'chatki'
+    'omegle ban in india', 'omegle ban duration', 'omegle ban 2022',
+    'omegle ban android', 'is omegle banned in world', 'omegle banned me',
+    'is omegle banned forever', 'omegle banned for no reason',
+    'random chat app', 'video call with strangers', 'omegle clone',
+    'chatroulette alternative', 'live video chat', 'online chat platform'
   ],
   longTail: [
     'best omegle alternative 2024', 'free random video chat no sign up',
     'safe chat with strangers', 'anonymous video chat app',
     'meet people online free', 'random video chat with girls',
     'international chat platform', 'video chat with strangers without registration',
-    'text chat with random people', 'omegle for adults'
+    'text chat with random people', 'omegle for adults',
+    'omegle pro', 'chat hub', 'emerald chat', 'ome tv', 'chatki'
+  ],
+  // New section for Omegle ban-related content
+  banInfo: [
+    'omegle ban status', 'omegle blocked', 'omegle not working',
+    'omegle banned countries', 'omegle unban', 'omegle access',
+    'omegle alternatives after ban', 'omegle replacement india',
+    'bypass omegle ban', 'omegle vpn'
   ]
 };
 
@@ -68,8 +78,8 @@ function MainContent() {
   } = useChat();
 
   const [metaData, setMetaData] = useState({
-    title: 'Omegle Pro - Free Random Video Chat & Text Chat with Strangers',
-    description: 'Connect instantly with random strangers worldwide. Free anonymous video chat and text chat - no registration required. The best Omegle alternative for meeting new people.',
+    title: 'Omegle Pro - Free Random Video Chat & Text Chat with Strangers | Best Omegle Alternative 2024',
+    description: 'Connect instantly with random strangers worldwide. Free anonymous video chat and text chat - no registration required. The ultimate Omegle alternative after Omegle ban. Join millions of users for Omegle TV style video calls and chat with strangers.',
     keywords: SEO_KEYWORDS.primary.join(', ')
   });
 
@@ -78,41 +88,43 @@ function MainContent() {
     const screenMeta = {
       'home': {
         title: 'Omegle Pro - Free Random Video Chat with Strangers | Best Omegle Alternative 2024',
-        description: '🚀 Instant random video chat & text chat with strangers. No registration needed. Join millions of users worldwide. 100% Free Omegle alternative for video calls and messaging.',
+        description: '🚀 Instant random video chat & text chat with strangers. No registration needed. Perfect Omegle com app replacement after Omegle ban in India and worldwide. Join millions of users for Omegle TV style video calls and Omegle live chat experience.',
       },
       'text-chat': {
         title: partner 
-          ? `💬 Chatting with ${partner.name || 'Stranger'} | Anonymous Text Chat - Omegle Pro`
-          : `🔍 Searching for Chat Partner... | Random Text Chat - Omegle Pro`,
+          ? `💬 Chatting with ${partner.name || 'Stranger'} | Omegle Talk to Strangers - Omegle Pro`
+          : `🔍 Searching for Chat Partner... | Omegle Free Text Chat - Omegle Pro`,
         description: partner
-          ? `Anonymous text chat with ${partner.name || 'stranger'}. Share interests, make friends, and have meaningful conversations. Safe & secure random chat platform.`
-          : `Finding random chat partners for anonymous text conversation. Free no-registration chat with strangers worldwide.`,
+          ? `Anonymous text chat with ${partner.name || 'stranger'}. Share interests, make friends, and have meaningful conversations. Safe & secure random chat platform like Omegle me feature.`
+          : `Finding random chat partners for anonymous text conversation. Free no-registration chat with strangers worldwide - better than Omegle com app.`,
       },
       'video-chat': {
         title: partner
-          ? `📹 Live Video Chat with ${partner.name || 'Stranger'} | Webcam Chat - Omegle Pro`
-          : `🔍 Searching for Video Chat... | Random Video Call - Omegle Pro`,
+          ? `📹 Omegle Live Video Chat with ${partner.name || 'Stranger'} | Webcam Chat - Omegle Pro`
+          : `🔍 Searching for Video Chat... | Omegle Video Call Alternative - Omegle Pro`,
         description: partner
-          ? `Live video chat with ${partner.name || 'random stranger'}. Face-to-face webcam conversations with people worldwide. Free video calling platform.`
-          : `Finding random partners for live video chat. Connect instantly via webcam with strangers from different countries.`,
+          ? `Live video chat with ${partner.name || 'random stranger'}. Face-to-face webcam conversations with people worldwide. Experience Omegle TV style video calls with better features.`
+          : `Finding random partners for live video chat. Connect instantly via webcam with strangers from different countries. Best alternative to Omegle video call.`,
       },
       'profile': {
         title: '👤 Customize Your Profile | Omegle Pro - Personalize Your Chat Experience',
-        description: 'Personalize your random chat profile. Add interests, upload avatar, and customize settings for better matching with strangers.',
+        description: 'Personalize your random chat profile. Add interests, upload avatar, and customize settings for better matching with strangers. Create your perfect Omegle me experience.',
       }
     };
 
     const newMeta = screenMeta[currentScreen] || screenMeta['home'];
     setMetaData({
       ...newMeta,
-      keywords: [...SEO_KEYWORDS.primary, ...SEO_KEYWORDS.secondary].join(', ')
+      keywords: [...SEO_KEYWORDS.primary, ...SEO_KEYWORDS.secondary, ...SEO_KEYWORDS.banInfo].join(', ')
     });
 
     // Update document title for better UX
     document.title = newMeta.title;
   }, [currentScreen, partner]);
 
+
   // Generate comprehensive structured data
+  // Generate comprehensive structured data with Omegle-specific content
   const generateStructuredData = () => ({
     "@context": "https://schema.org",
     "@graph": [
@@ -120,8 +132,8 @@ function MainContent() {
         "@type": "WebSite",
         "@id": "https://omeglepro.vercel.app/#website",
         "url": "https://omeglepro.vercel.app/",
-        "name": "Omegle Pro",
-        "description": metaData.description,
+        "name": "Omegle Pro - Best Omegle Alternative",
+        "description": "Free Omegle alternative for random video and text chat with strangers. Perfect replacement after Omegle ban in India and worldwide.",
         "inLanguage": "en-US",
         "potentialAction": [{
           "@type": "SearchAction",
@@ -132,9 +144,9 @@ function MainContent() {
       {
         "@type": "WebApplication",
         "@id": "https://omeglepro.vercel.app/#webapp",
-        "name": "Omegle Pro",
+        "name": "Omegle Pro App",
         "url": "https://omeglepro.vercel.app/",
-        "description": "Free random video chat and text chat platform",
+        "description": "Free random video chat and text chat platform - The best Omegle com app alternative",
         "applicationCategory": "CommunicationApplication",
         "operatingSystem": "Any",
         "offers": {
@@ -143,13 +155,14 @@ function MainContent() {
           "priceCurrency": "USD"
         },
         "featureList": [
-          "Random Video Chat",
-          "Anonymous Text Chat",
+          "Random Video Chat like Omegle TV",
+          "Anonymous Text Chat like Omegle me",
           "No Registration Required",
           "Global User Base",
           "Interest Matching",
           "Webcam Support",
-          "Mobile Friendly"
+          "Mobile Friendly",
+          "Omegle ban workaround"
         ]
       },
       {
@@ -172,53 +185,93 @@ function MainContent() {
     ]
   });
 
+  // Enhanced FAQ with Omegle-specific questions
   const generateFAQData = () => ({
     "@context": "https://schema.org",
     "@type": "FAQPage",
     "mainEntity": [
       {
         "@type": "Question",
-        "name": "Is Omegle Pro free to use?",
+        "name": "Is Omegle Pro free to use like Omegle com app?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Yes, Omegle Pro is completely free. No registration or payment is required to start random video or text chats with strangers."
+          "text": "Yes, Omegle Pro is completely free like the original Omegle com app. No registration or payment is required to start random video or text chats with strangers."
         }
       },
       {
         "@type": "Question",
-        "name": "Do I need to create an account to chat?",
+        "name": "Is Omegle Pro a good alternative to Omegle after the ban?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "No account needed! Start chatting instantly without any registration. You can choose to create a profile for better matching, but it's optional."
+          "text": "Absolutely! Omegle Pro offers all the features of Omegle com app including Omegle TV style video calls, Omegle me text chat, and more. It's the perfect solution after Omegle ban in India and other countries."
         }
       },
       {
         "@type": "Question",
-        "name": "Is Omegle Pro safe?",
+        "name": "Do I need to create an account like Omegle me?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "We prioritize user safety with moderated chats, reporting features, and optional anonymity. However, always exercise caution when chatting with strangers online."
+          "text": "No account needed! Start chatting instantly without any registration, just like the original Omegle com app. You can choose to create a profile for better matching, but it's optional."
         }
       },
       {
         "@type": "Question",
-        "name": "What makes Omegle Pro better than other chat sites?",
+        "name": "Can I use Omegle Pro on Android after Omegle ban Android?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Omegle Pro offers faster connections, better matching algorithms, no ads for premium users, and a cleaner interface compared to other random chat platforms."
+          "text": "Yes! Omegle Pro works perfectly on Android devices and is a great alternative after the Omegle ban Android restriction. Our mobile interface is optimized for smartphones and tablets."
         }
       },
       {
         "@type": "Question",
-        "name": "Can I use Omegle Pro on mobile?",
+        "name": "Is Omegle Pro banned in any countries?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Yes! Omegle Pro is fully responsive and works perfectly on smartphones, tablets, and desktop computers."
+          "text": "No, Omegle Pro is accessible worldwide. Unlike Omegle which faced bans in India and other regions, Omegle Pro remains available globally as the best Omegle alternative."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How long is the Omegle ban duration?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "The original Omegle com app was permanently shut down in 2023. Omegle Pro provides a permanent solution with similar features and better safety measures."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Can I talk to strangers like on Omegle?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes! Omegle Pro lets you talk to strangers through both video calls (like Omegle TV) and text chat (like Omegle me) completely anonymously."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Does Omegle Pro have Omegle girl features?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Omegle Pro connects you with random users worldwide. While we don't guarantee specific demographics, you can meet people from all backgrounds, just like the original Omegle com app."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Is Omegle banned forever?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes, the original Omegle com app was permanently shut down. Omegle Pro is here as the ultimate replacement with enhanced features and better user experience."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What if I was Omegle banned for no reason?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "With Omegle Pro, you won't face unfair bans. We have transparent moderation policies and appeal processes, unlike the original Omegle where users sometimes got banned for no reason."
         }
       }
     ]
   });
-
   // Preload critical resources
   useEffect(() => {
     // Preconnect to external domains
@@ -402,9 +455,15 @@ function MainContent() {
         <meta name="keywords" content={metaData.keywords} />
         
         {/* Extended Keywords for Better Ranking */}
-        <meta name="subject" content="Random Video Chat, Omegle Alternative, Stranger Chat" />
-        <meta name="topic" content="Online Chat Platform" />
-        <meta name="summary" content="Free random video and text chat with strangers worldwide" />
+              <meta name="subject" content="Omegle Alternative, Omegle TV, Omegle Video Call, Omegle Ban, Chat with Strangers" />
+
+        <meta name="topic" content="Online Chat Platform, Omegle Replacement, Random Video Chat" />
+  <meta name="summary" content="Free Omegle alternative for random video and text chat with strangers. Best solution after Omegle ban in India and worldwide." />
+        
+
+                <meta name="omegle-alternative" content="true" />
+        <meta name="omegle-ban-solution" content="true" />
+        <meta name="random-chat" content="omegle, omegle tv, omegle video call" />
         
         {/* Canonical URL */}
         <link rel="canonical" href="https://omeglepro.vercel.app/" />
@@ -484,6 +543,8 @@ function MainContent() {
             }]
           })}
         </script>
+
+        
         
         {/* Preload Critical Resources */}
         <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" as="style" />
@@ -537,6 +598,9 @@ function MainContent() {
         {/* Additional Performance */}
         <meta http-equiv="Cache-Control" content="public, max-age=31536000" />
         <meta http-equiv="Expires" content="31536000" />
+
+
+        
       </Helmet>
 
       <div className="min-h-screen bg-gradient-to-br from-gray-900 to-black text-white">

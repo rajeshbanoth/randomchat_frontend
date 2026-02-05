@@ -1,7 +1,8 @@
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
-  <meta charset="UTF-8" />
+    <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="google-site-verification" content="OizuGPv2YaLLTYmzvTxenXROSUEYJIOMovD3Bit0fHc" />
@@ -42,10 +43,68 @@
     <meta name="apple-mobile-web-app-title" content="Omegle Pro" />
     <meta name="application-name" content="Omegle Pro" />
     <meta name="theme-color" content="#3b82f6" />
+    
+    <!-- Schema.org structured data - CRITICAL for Google -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "Omegle Pro",
+      "alternateName": ["OmeglePro", "Omegle Random Chat"],
+      "url": "https://omeglepro.vercel.app/",
+      "description": "Free random video and text chat platform to connect with strangers worldwide. Omegle alternative for anonymous online chatting.",
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": {
+          "@type": "EntryPoint",
+          "urlTemplate": "https://omeglepro.vercel.app/search?q={search_term_string}"
+        },
+        "query-input": "required name=search_term_string"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "Omegle Pro",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "https://omeglepro.vercel.app/logo.png"
+        }
+      },
+      "sameAs": [
+        "https://twitter.com/omeglepro",
+        "https://facebook.com/omeglepro"
+      ]
+    }
+    </script>
+    
+    <!-- Additional WebSite schema for homepage -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebPage",
+      "name": "Omegle Pro - Random Video Chat Homepage",
+      "url": "https://omeglepro.vercel.app/",
+      "description": "Homepage of Omegle Pro - free random video chat platform",
+      "breadcrumb": {
+        "@type": "BreadcrumbList",
+        "itemListElement": [{
+          "@type": "ListItem",
+          "position": 1,
+          "name": "Home",
+          "item": "https://omeglepro.vercel.app/"
+        }]
+      }
+    }
+    </script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+    
+    <!-- Fallback for crawlers without JavaScript -->
+    <noscript>
+      <h1>Omegle Pro - Random Video Chat</h1>
+      <p>Connect with strangers worldwide via random video and text chat on Omegle Pro. Free online chat platform similar to Omegle.</p>
+      <p>Please enable JavaScript to use the chat platform.</p>
+    </noscript>
   </body>
 </html>
-

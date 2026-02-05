@@ -25,14 +25,20 @@ import PrivacyPolicy from '../src/pages/PrivacyPolicy';
 import TermsOfService from '../src/pages/TermsOfService';
 import ContactUs from './pages/ContactUs';
 import { HelmetProvider } from 'react-helmet-async';
+import AboutPage from './pages/AboutPage';
 function App() {
   return (
      <HelmetProvider>
        <ChatProvider>
       <Router>
         <Routes>
-          <Route path="/" element={<MainContent />} />
+      
+           <Route path="/text-chat" element={<MainContent />} />
+             <Route path="/video-chat" element={<MainContent />} />
+            <Route path="/" element={<MainContent />} />
+             <Route path="/aboutus" element={<AboutPage />} />
           <Route path="/community-guidelines" element={<CommunityGuidelines />} />
+           <Route path="/safety" element={<CommunityGuidelines />} />
           <Route path="/privacy-policy" element={<PrivacyPolicy />} />
           <Route path="/terms-of-service" element={<TermsOfService />} />
           <Route path="/contact-us" element={<ContactUs />} />
