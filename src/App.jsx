@@ -36,6 +36,7 @@ function App() {
            <Route path="/text-chat" element={<MainContent />} />
              <Route path="/video-chat" element={<MainContent />} />
             <Route path="/" element={<MainContent />} />
+                <Route path="/home" element={<MainContent />} />
              <Route path="/aboutus" element={<AboutPage />} />
           <Route path="/community-guidelines" element={<CommunityGuidelines />} />
            <Route path="/safety" element={<CommunityGuidelines />} />
