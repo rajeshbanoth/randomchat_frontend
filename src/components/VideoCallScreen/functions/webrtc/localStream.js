@@ -32,50 +32,61 @@ export async function initializeLocalStreamFn({
   maxStreamRetries = 3,
   addNotification
 }) {
+  const ts = () => new Date().toISOString().slice(11, 23); // [HH:mm:ss.SSS]
+
   if (isInitializing) {
-    console.log('⏳ Already initializing local stream');
+    console.warn(`[${ts()}] [MEDIA-INIT] Already initializing — skipping duplicate call`);
     return null;
   }
+
+  console.log(`[${ts()}] [MEDIA-INIT] Starting local stream initialization`);
 
   setIsInitializing(true);
   setDeviceError(null);
 
-  console.log('🎥 Requesting media devices...');
-
   try {
+    // ─── DEVICE ENUMERATION (very useful for debugging) ────────────
+    console.log(`[${ts()}] [DEVICES] Enumerating media devices...`);
     const devices = await navigator.mediaDevices.enumerateDevices();
-    const videoDevices = devices.filter(d => d.kind === 'videoinput');
-    const audioDevices = devices.filter(d => d.kind === 'audioinput');
 
-    console.log('📱 Available devices:', {
-      video: videoDevices.length,
-      audio: audioDevices.length,
-      devices: devices.map(d => ({
-        kind: d.kind,
-        label: d.label,
-        deviceId: d.deviceId
+    const videoInputs = devices.filter(d => d.kind === 'videoinput');
+    const audioInputs = devices.filter(d => d.kind === 'audioinput');
+
+    console.log(`[${ts()}] [DEVICES] Found devices`, {
+      videoCount: videoInputs.length,
+      audioCount: audioInputs.length,
+      videoDevices: videoInputs.map(d => ({
+        label: d.label || '(no label - permission missing?)',
+        deviceId: d.deviceId.substring(0, 8) + '...',
+        groupId: d.groupId || 'none'
+      })),
+      audioDevices: audioInputs.map(d => ({
+        label: d.label || '(no label - permission missing?)',
+        deviceId: d.deviceId.substring(0, 8) + '...',
+        groupId: d.groupId || 'none'
       }))
     });
 
-    // Stop any existing stream FIRST (critical)
+    // ─── CLEAN UP EXISTING STREAM ─────────────────────────────────
     if (localStreamRef.current) {
-      console.log('🛑 Stopping existing local stream tracks...');
+      console.log(`[${ts()}] [CLEANUP] Stopping existing local stream tracks`);
       localStreamRef.current.getTracks().forEach(track => {
         try {
           track.stop();
-          console.log(`🛑 Stopped ${track.kind} track`);
-        } catch (e) {
-          console.warn('Error stopping track', e);
+          console.log(`[${ts()}] [CLEANUP] Stopped ${track.kind} track (id: ${track.id?.substring(0,8)})`);
+        } catch (stopErr) {
+          console.warn(`[${ts()}] [CLEANUP] Error stopping ${track.kind} track`, {
+            message: stopErr.message
+          });
         }
       });
       localStreamRef.current = null;
     }
 
-    // Short pause
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise(r => setTimeout(r, 120)); // small breathing room
 
-    // Build constraints
-    let constraints = {
+    // ─── BUILD CONSTRAINTS (logged per attempt) ────────────────────
+    let baseConstraints = {
       video: {
         width: { ideal: 640 },
         height: { ideal: 480 },
@@ -88,133 +99,166 @@ export async function initializeLocalStreamFn({
       }
     };
 
-    if (videoDevices.length === 0) {
-      console.warn('⚠️ No video devices found, using audio only');
-      constraints.video = false;
-    } else {
-      constraints.video.deviceId = { exact: videoDevices[0].deviceId };
-    }
-
-    if (audioDevices.length === 0) {
-      console.warn('⚠️ No audio devices found, using video only');
-      constraints.audio = false;
-    } else {
-      constraints.audio.deviceId = { exact: audioDevices[0].deviceId };
-    }
-
+    // ─── MULTI-ATTEMPT LOGIC ──────────────────────────────────────
     let stream = null;
-    let attemptCount = 0;
-    const maxAttempts = 3;
+    let attempt = 0;
+    const MAX_ATTEMPTS = 3;
 
-    while (!stream && attemptCount < maxAttempts) {
-      attemptCount++;
-      console.log(`🔄 Attempt ${attemptCount}/${maxAttempts} to get media stream`);
+    while (!stream && attempt < MAX_ATTEMPTS) {
+      attempt++;
+      console.log(`[${ts()}] [GUM-ATTEMPT] Trying getUserMedia — attempt ${attempt}/${MAX_ATTEMPTS}`);
+
+      let currentConstraints = { ...baseConstraints };
+
+      if (attempt === 2) {
+        console.log(`[${ts()}] [GUM-ADAPT] Attempt 2 → removing exact deviceId`);
+        if (videoInputs.length > 0) currentConstraints.video = true;
+        if (audioInputs.length > 0) currentConstraints.audio = true;
+      } else if (attempt === 3) {
+        console.log(`[${ts()}] [GUM-ADAPT] Attempt 3 → minimal constraints`);
+        currentConstraints = {
+          video: videoInputs.length > 0 ? {
+            width: { min: 320, ideal: 640, max: 1280 },
+            height: { min: 240, ideal: 480, max: 720 },
+            frameRate: { ideal: 15, max: 30 }
+          } : false,
+          audio: audioInputs.length > 0
+        };
+      }
+
+      console.log(`[${ts()}] [GUM-CONSTRAINTS] Using constraints:`, currentConstraints);
 
       try {
-        stream = await navigator.mediaDevices.getUserMedia(constraints);
-        console.log(`✅ Got stream on attempt ${attemptCount}`);
-      } catch (error) {
-        console.warn(`⚠️ Attempt ${attemptCount} failed:`, error.name, error.message);
+        stream = await navigator.mediaDevices.getUserMedia(currentConstraints);
+        console.log(`[${ts()}] [GUM-SUCCESS] getUserMedia succeeded on attempt ${attempt}`);
+      } catch (gumErr) {
+        console.warn(`[${ts()}] [GUM-FAIL] Attempt ${attempt} failed`, {
+          name: gumErr.name,
+          message: gumErr.message,
+          stack: gumErr.stack?.split('\n').slice(0, 3)
+        });
 
-        if (attemptCount < maxAttempts) {
-          await new Promise(resolve => setTimeout(resolve, 500));
-
-          if (attemptCount === 2) {
-            console.log('🔄 Trying without specific device IDs...');
-            constraints = {
-              video: videoDevices.length > 0,
-              audio: audioDevices.length > 0
-            };
-          } else if (attemptCount === 3) {
-            console.log('🔄 Trying with minimal constraints...');
-            constraints = {
-              video: videoDevices.length > 0 ? {
-                width: { min: 320, ideal: 640, max: 1280 },
-                height: { min: 240, ideal: 480, max: 720 },
-                frameRate: { ideal: 15, max: 30 }
-              } : false,
-              audio: audioDevices.length > 0
-            };
-          }
+        if (attempt < MAX_ATTEMPTS) {
+          await new Promise(r => setTimeout(r, 600));
         }
       }
     }
 
+    // ─── HANDLE FAILURE AFTER ALL ATTEMPTS ─────────────────────────
     if (!stream) {
-      throw new Error('Could not access media devices after multiple attempts');
+      throw new Error(`getUserMedia failed after ${MAX_ATTEMPTS} attempts`);
     }
 
+    // ─── STREAM SUCCESS HANDLING ──────────────────────────────────
     const videoTracks = stream.getVideoTracks();
     const audioTracks = stream.getAudioTracks();
 
-    console.log('✅ Stream obtained:', {
+    console.log(`[${ts()}] [STREAM-INFO] Stream acquired successfully`, {
       videoTracks: videoTracks.length,
       audioTracks: audioTracks.length,
-      videoEnabled: videoTracks[0]?.enabled ?? false,
-      audioEnabled: audioTracks[0]?.enabled ?? false
+      totalTracks: stream.getTracks().length,
+      active: stream.active,
+      id: stream.id?.substring(0, 8)
     });
 
-    // Track listeners
+    // Detailed track report
+    if (videoTracks.length > 0) {
+      console.log(`[${ts()}] [VIDEO-TRACK]`, {
+        id: videoTracks[0].id?.substring(0, 8),
+        enabled: videoTracks[0].enabled,
+        readyState: videoTracks[0].readyState,
+        muted: videoTracks[0].muted,
+        label: videoTracks[0].label || '(no label)'
+      });
+    }
+    if (audioTracks.length > 0) {
+      console.log(`[${ts()}] [AUDIO-TRACK]`, {
+        id: audioTracks[0].id?.substring(0, 8),
+        enabled: audioTracks[0].enabled,
+        readyState: audioTracks[0].readyState,
+        muted: audioTracks[0].muted,
+        label: audioTracks[0].label || '(no label)'
+      });
+    }
+
+    // ─── ATTACH EVENT LISTENERS ───────────────────────────────────
     videoTracks.forEach(track => {
       track.onended = () => {
-        console.warn('Video track ended');
+        console.warn(`[${ts()}] [TRACK-EVENT] Video track ended`);
         setIsVideoEnabled(false);
       };
       track.onmute = () => {
-        console.log('Video track muted');
+        console.log(`[${ts()}] [TRACK-EVENT] Video track muted`);
         setIsVideoEnabled(false);
       };
       track.onunmute = () => {
-        console.log('Video track unmuted');
+        console.log(`[${ts()}] [TRACK-EVENT] Video track unmuted`);
         setIsVideoEnabled(true);
       };
     });
 
     audioTracks.forEach(track => {
       track.onended = () => {
-        console.warn('Audio track ended');
+        console.warn(`[${ts()}] [TRACK-EVENT] Audio track ended`);
         setIsAudioEnabled(false);
       };
       track.onmute = () => {
-        console.log('Audio track muted');
+        console.log(`[${ts()}] [TRACK-EVENT] Audio track muted`);
         setIsAudioEnabled(false);
       };
       track.onunmute = () => {
-        console.log('Audio track unmuted');
+        console.log(`[${ts()}] [TRACK-EVENT] Audio track unmuted`);
         setIsAudioEnabled(true);
       };
     });
 
+    // ─── APPLY STREAM TO STATE & VIDEO ELEMENT ────────────────────
     localStreamRef.current = stream;
     setLocalStream(stream);
     setHasLocalStream(true);
 
     if (localVideoRef?.current) {
+      console.log(`[${ts()}] [LOCAL-VIDEO] Attaching stream to local video element`);
       localVideoRef.current.srcObject = stream;
-      console.log('✅ Local video element updated');
+      localVideoRef.current.playsInline = true;
+      localVideoRef.current.muted = true; // local preview usually muted
 
-      localVideoRef.current.play().catch(err => {
-        console.warn('⚠️ Local video auto-play failed:', err);
-      });
+      const playPromise = localVideoRef.current.play();
+      playPromise
+        .then(() => console.log(`[${ts()}] [LOCAL-VIDEO] Local preview playback started`))
+        .catch(err => console.warn(`[${ts()}] [LOCAL-VIDEO] Local preview play() failed`, {
+          name: err.name,
+          message: err.message
+        }));
+    } else {
+      console.warn(`[${ts()}] [LOCAL-VIDEO] localVideoRef.current is null — preview not shown`);
     }
 
-    setIsVideoEnabled(videoTracks.length > 0 && (videoTracks[0]?.enabled ?? true));
-    setIsAudioEnabled(audioTracks.length > 0 && (audioTracks[0]?.enabled ?? true));
+    setIsVideoEnabled(videoTracks.length > 0 && videoTracks[0]?.enabled !== false);
+    setIsAudioEnabled(audioTracks.length > 0 && audioTracks[0]?.enabled !== false);
 
     streamRetryCountRef.current = 0;
-    console.log('✅ Local stream initialization complete');
-    return stream;
-  } catch (error) {
-    console.error('❌ Failed to get local stream:', error.name, error.message);
+    console.log(`[${ts()}] [MEDIA-INIT] Local stream initialization successful`);
 
-    streamRetryCountRef.current += 1;
+    return stream;
+
+  } catch (error) {
+    console.error(`[${ts()}] [MEDIA-FAIL] Failed to initialize local stream`, {
+      name: error.name,
+      message: error.message,
+      stack: error.stack?.split('\n').slice(0, 4)
+    });
+
+    streamRetryCountRef.current = (streamRetryCountRef.current || 0) + 1;
 
     if (streamRetryCountRef.current < maxStreamRetries) {
-      console.log(`🔄 Retrying stream (${streamRetryCountRef.current}/${maxStreamRetries})...`);
-      setDeviceError(`Failed to access camera/microphone. Retrying... (${streamRetryCountRef.current}/${maxStreamRetries})`);
-      await new Promise(resolve => setTimeout(resolve, 1000 * streamRetryCountRef.current));
+      console.log(`[${ts()}] [RETRY] Retrying getUserMedia (${streamRetryCountRef.current}/${maxStreamRetries})`);
+      setDeviceError(`Failed to access camera/microphone. Retrying (${streamRetryCountRef.current}/${maxStreamRetries})...`);
+
+      await new Promise(r => setTimeout(r, 1000 * streamRetryCountRef.current));
+
       return initializeLocalStreamFn({
-        isInitializing: false, // allow re-entry
+        isInitializing: false,
         setIsInitializing,
         setDeviceError,
         localStreamRef,
@@ -229,11 +273,14 @@ export async function initializeLocalStreamFn({
       });
     }
 
-    // All retries failed
-    setDeviceError('Cannot access camera or microphone. Please check permissions and ensure no other app is using the camera.');
+    // ─── FINAL FAILURE → FALLBACK TO PLACEHOLDER ──────────────────
+    console.error(`[${ts()}] [MEDIA-FINAL] All retries failed — falling back to placeholder`);
+
+    setDeviceError('Cannot access camera or microphone. Using placeholder instead.');
     addNotification?.('Cannot access camera/microphone. Using placeholder.', 'error');
 
-    const placeholder = createPlaceholderStreamFn({
+    // Assuming createPlaceholderStreamFn is defined elsewhere
+    const placeholder = createPlaceholderStreamFn?.({
       localStreamRef,
       setLocalStream,
       setHasLocalStream,
@@ -241,9 +288,17 @@ export async function initializeLocalStreamFn({
       setIsVideoEnabled
     });
 
-    return placeholder;
+    if (placeholder) {
+      console.log(`[${ts()}] [PLACEHOLDER] Placeholder stream activated`);
+      return placeholder;
+    } else {
+      console.error(`[${ts()}] [PLACEHOLDER] Failed to create placeholder stream`);
+      return null;
+    }
+
   } finally {
     setIsInitializing(false);
+    console.log(`[${ts()}] [MEDIA-INIT] Initialization function completed (isInitializing = false)`);
   }
 }
 
