@@ -1,16 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-
   <url>
     <loc>https://omeglepro.vercel.app/</loc>
-    <lastmod>2025-02-01</lastmod>
+    <lastmod>2026-02-01</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
 
   <url>
     <loc>https://omeglepro.vercel.app/contact-us</loc>
-    <lastmod>2025-02-01</lastmod>
+    <lastmod>2026-02-01</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
@@ -31,6 +30,27 @@
 
   <url>
     <loc>https://omeglepro.vercel.app/terms-of-service</loc>
+    <lastmod>2025-02-01</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.6</priority>
+  </url>
+
+    <url>
+    <loc>https://omeglepro.vercel.app/text-chat</loc>
+    <lastmod>2025-02-01</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.6</priority>
+  </url>
+
+    <url>
+    <loc>https://omeglepro.vercel.app/video-chat</loc>
+    <lastmod>2025-02-01</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.6</priority>
+  </url>
+
+    <url>
+    <loc>https://omeglepro.vercel.app/aboutus</loc>
     <lastmod>2025-02-01</lastmod>
     <changefreq>yearly</changefreq>
     <priority>0.6</priority>
