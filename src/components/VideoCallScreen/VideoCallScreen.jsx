@@ -551,102 +551,119 @@ const VideoChatScreen = () => {
           </div>
 
           {/* Layout Grid */}
-          <div className="p-6 max-h-[60vh] overflow-y-auto">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {LAYOUT_CONFIG.map((layout) => {
-                const isActive = layout.id === videoLayout;
-                const isDefault = layout.id === savedDefaultLayout;
-                const isMobileFriendly = layout.mobileFriendly && isMobile;
-                
-                return (
-                  <button
-                    key={layout.id}
-                    onClick={() => {
-                      handleLayoutChange(layout.id);
-                      setShowLayoutModal(false);
-                    }}
-                    className={`relative p-4 rounded-xl transition-all duration-300 border-2 group ${
-                      isActive 
-                        ? 'border-blue-500 bg-gradient-to-br from-blue-500/10 to-blue-600/5' 
-                        : 'border-gray-800 hover:border-gray-700 bg-gradient-to-br from-gray-800/30 to-gray-900/30'
-                    } ${!isMobileFriendly && isMobile ? 'opacity-50 cursor-not-allowed' : 'hover:scale-[1.02]'}`}
-                    disabled={!isMobileFriendly && isMobile}
-                  >
-                    {/* Default Badge */}
-                    {isDefault && (
-                      <div className="absolute -top-2 -right-2 px-2 py-1 bg-gradient-to-r from-emerald-500 to-green-500 rounded-full text-xs font-medium z-10">
-                        <FaCheck className="inline mr-1" /> Default
-                      </div>
-                    )}
-                    
-                    {/* Layout Icon */}
-                    <div className="flex justify-center mb-3">
-                      <div className={`w-20 h-12 rounded-lg flex items-center justify-center ${
-                        isActive 
-                          ? 'bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border border-blue-500/30' 
-                          : 'bg-gray-800/50 border border-gray-700/50'
-                      }`}>
-                        {getLayoutIconComponent(layout.icon)}
-                      </div>
-                    </div>
-                    
-                    {/* Layout Info */}
-                    <div className="text-left">
-                      <div className="flex items-center justify-between mb-1">
-                        <h4 className={`font-semibold ${
-                          isActive ? 'text-white' : 'text-gray-300'
-                        }`}>
-                          {layout.name}
-                        </h4>
-                        {isActive && (
-                          <div className="w-2 h-2 bg-gradient-to-r from-blue-400 to-cyan-400 rounded-full animate-pulse"></div>
-                        )}
-                      </div>
-                      <p className="text-xs text-gray-400 mb-3">
-                        {layout.description}
-                      </p>
-                      
-                      {/* Mobile Warning */}
-                      {!isMobileFriendly && isMobile && (
-                        <div className="text-xs text-yellow-500 bg-yellow-500/10 rounded px-2 py-1 mb-3">
-                          Not optimized for mobile
-                        </div>
-                      )}
-                      
-                      {/* Action Buttons */}
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            saveDefaultLayout(layout.id);
-                          }}
-                          className={`flex-1 text-xs px-3 py-1.5 rounded-lg transition-all duration-300 ${
-                            isDefault 
-                              ? 'bg-gradient-to-r from-emerald-500/30 to-green-500/30 border border-emerald-500/50 text-emerald-300' 
-                              : 'bg-gradient-to-r from-gray-800/50 to-gray-900/50 border border-gray-700/50 text-gray-400 hover:text-white hover:border-gray-600/50'
-                          }`}
-                        >
-                          {isDefault ? 'Default Saved' : 'Set as Default'}
-                        </button>
-                        
-                        {isDefault && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              clearDefaultLayout();
-                            }}
-                            className="px-3 py-1.5 text-xs bg-gradient-to-r from-red-500/20 to-rose-500/20 border border-red-500/30 text-red-300 rounded-lg hover:opacity-90 transition-all duration-300"
-                          >
-                            Clear
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
+<div className="p-6 max-h-[60vh] overflow-y-auto">
+  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    {LAYOUT_CONFIG.map((layout) => {
+      const isActive = layout.id === videoLayout;
+      const isDefault = layout.id === savedDefaultLayout;
+      const isMobileFriendly = layout.mobileFriendly && isMobile;
+      const isDisabled = !isMobileFriendly && isMobile;
+
+      const handleCardActivate = () => {
+        if (isDisabled) return;
+        handleLayoutChange(layout.id);
+        setShowLayoutModal(false);
+      };
+
+      const handleKeyDown = (e) => {
+        if (isDisabled) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault(); // prevent page scroll on Space
+          handleCardActivate();
+        }
+      };
+
+      return (
+        <div
+          key={layout.id}
+          role="button"
+          tabIndex={isDisabled ? -1 : 0}
+          aria-disabled={isDisabled}
+          aria-pressed={isActive}
+          onClick={handleCardActivate}
+          onKeyDown={handleKeyDown}
+          className={`relative p-4 rounded-xl transition-all duration-300 border-2 group ${
+            isActive
+              ? 'border-blue-500 bg-gradient-to-br from-blue-500/10 to-blue-600/5'
+              : 'border-gray-800 hover:border-gray-700 bg-gradient-to-br from-gray-800/30 to-gray-900/30'
+          } ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'hover:scale-[1.02]'}`}
+        >
+          {/* Default Badge */}
+          {isDefault && (
+            <div className="absolute -top-2 -right-2 px-2 py-1 bg-gradient-to-r from-emerald-500 to-green-500 rounded-full text-xs font-medium z-10">
+              <FaCheck className="inline mr-1" /> Default
+            </div>
+          )}
+
+          {/* Layout Icon */}
+          <div className="flex justify-center mb-3">
+            <div
+              className={`w-20 h-12 rounded-lg flex items-center justify-center ${
+                isActive
+                  ? 'bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border border-blue-500/30'
+                  : 'bg-gray-800/50 border border-gray-700/50'
+              }`}
+            >
+              {getLayoutIconComponent(layout.icon)}
             </div>
           </div>
+
+          {/* Layout Info */}
+          <div className="text-left">
+            <div className="flex items-center justify-between mb-1">
+              <h4 className={`font-semibold ${isActive ? 'text-white' : 'text-gray-300'}`}>
+                {layout.name}
+              </h4>
+              {isActive && (
+                <div className="w-2 h-2 bg-gradient-to-r from-blue-400 to-cyan-400 rounded-full animate-pulse" />
+              )}
+            </div>
+            <p className="text-xs text-gray-400 mb-3">{layout.description}</p>
+
+            {/* Mobile Warning */}
+            {!isMobileFriendly && isMobile && (
+              <div className="text-xs text-yellow-500 bg-yellow-500/10 rounded px-2 py-1 mb-3">
+                Not optimized for mobile
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex space-x-2">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  saveDefaultLayout(layout.id);
+                }}
+                className={`flex-1 text-xs px-3 py-1.5 rounded-lg transition-all duration-300 ${
+                  isDefault
+                    ? 'bg-gradient-to-r from-emerald-500/30 to-green-500/30 border border-emerald-500/50 text-emerald-300'
+                    : 'bg-gradient-to-r from-gray-800/50 to-gray-900/50 border border-gray-700/50 text-gray-400 hover:text-white hover:border-gray-600/50'
+                }`}
+                aria-pressed={isDefault}
+                disabled={isDisabled}
+              >
+                {isDefault ? 'Default Saved' : 'Set as Default'}
+              </button>
+
+              {isDefault && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    clearDefaultLayout();
+                  }}
+                  className="px-3 py-1.5 text-xs bg-gradient-to-r from-red-500/20 to-rose-500/20 border border-red-500/30 text-red-300 rounded-lg hover:opacity-90 transition-all duration-300"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    })}
+  </div>
+</div>
+
 
           {/* Footer */}
           <div className="p-4 border-t border-gray-800/50 bg-gradient-to-r from-gray-900/50 to-gray-900/30">
@@ -2131,7 +2148,7 @@ useEffect(() => {
     // Set new timeout to hide controls
     mouseMoveTimeout = setTimeout(() => {
       console.log("[UI] Hiding controls after inactivity");
-      setShowControls(false);
+      setShowControls(true);
     }, 3000);
   };
 
@@ -3309,77 +3326,8 @@ const renderVideoLayout = () => {
           </div>
         </div>
         
-        {/* Additional Controls */}
-        <div className="px-4 pb-2 sm:px-6 sm:pb-3 border-t border-gray-800/30 pt-2">
-          <div className="max-w-4xl mx-auto">
-            <div className="flex justify-center space-x-2 sm:space-x-4">
-              <button
-                onClick={() => setShowLayoutModal(true)}
-                className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-blue-500/20 to-cyan-500/20 hover:from-blue-500/30 hover:to-cyan-500/30 rounded-lg text-xs sm:text-sm transition-all duration-300 backdrop-blur-sm border border-blue-500/30 flex items-center"
-              >
-                <FaLayout className="mr-1 sm:mr-2" />
-                <span>Change Layout</span>
-              </button>
-              
-              <button
-                onClick={copyRoomLink}
-                className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-gray-800/30 to-gray-900/30 hover:from-gray-700/30 hover:to-gray-800/30 rounded-lg text-xs sm:text-sm transition-all duration-300 backdrop-blur-sm border border-gray-700/30 flex items-center"
-              >
-                <FaRegCopy className="mr-1 sm:mr-2" />
-                <span>Copy Link</span>
-              </button>
-              
-              <button
-                onClick={debugLayoutInfo}
-                className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-gray-800/30 to-gray-900/30 hover:from-gray-700/30 hover:to-gray-800/30 rounded-lg text-xs sm:text-sm transition-all duration-300 backdrop-blur-sm border border-gray-700/30"
-              >
-                <FaInfoCircle className="inline mr-1 sm:mr-2" />
-                <span>Debug Layout</span>
-              </button>
-              
-              <button
-                onClick={debugStreamInfo}
-                className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-blue-500/20 to-cyan-500/20 hover:from-blue-500/30 hover:to-cyan-500/30 rounded-lg text-xs sm:text-sm transition-all duration-300 backdrop-blur-sm border border-blue-500/30"
-              >
-                <FaInfoCircle className="inline mr-1 sm:mr-2" />
-                <span>Debug Streams</span>
-              </button>
-              
-              {!hasLocalStream && (
-                <button
-                  onClick={retryLocalStream}
-                  className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-yellow-500/20 to-orange-500/20 hover:from-yellow-500/30 hover:to-orange-500/30 rounded-lg text-xs sm:text-sm transition-all duration-300 backdrop-blur-sm border border-yellow-500/30"
-                >
-                  <FaSync className="inline mr-1 sm:mr-2" />
-                  <span>Retry Camera</span>
-                </button>
-              )}
-              
-              <button
-                onClick={createAndUsePlaceholder}
-                className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-purple-500/20 to-pink-500/20 hover:from-purple-500/30 hover:to-pink-500/30 rounded-lg text-xs sm:text-sm transition-all duration-300 backdrop-blur-sm border border-purple-500/30"
-              >
-                <FaCamera className="inline mr-1 sm:mr-2" />
-                <span>Placeholder</span>
-              </button>
-              
-              {/* Quick Layout Switcher for Mobile */}
-              {isMobile && (
-                <button
-                  onClick={() => {
-                    const layouts = ['pip', 'grid-horizontal', 'grid-vertical', 'side-by-side', 'stack'];
-                    const nextLayout = layouts[(layouts.indexOf(videoLayout) + 1) % layouts.length];
-                    handleLayoutChange(nextLayout);
-                  }}
-                  className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-indigo-500/20 to-blue-500/20 hover:from-indigo-500/30 hover:to-blue-500/30 rounded-lg text-xs sm:text-sm transition-all duration-300 backdrop-blur-sm border border-indigo-500/30"
-                  title="Switch layout"
-                >
-                  <span>Layout: {videoLayout.replace('-', ' ')}</span>
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
+       
+
       </div>
       
       {/* Settings Panel */}
